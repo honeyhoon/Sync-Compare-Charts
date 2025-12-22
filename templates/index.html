@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="theme-color" content="#FFFFFF">
+    <title>주식 비교 차트</title>
+
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+</head>
+
+<body>
+    <div id="app">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1 class="title">주식 비교</h1>
+        </header>
+
+        <!-- 검색 영역 -->
+        <section class="search-section">
+            <div class="search-row">
+                <input type="text" id="ticker-input" placeholder="티커 입력 (예: AAPL)">
+                <button id="add-btn" class="btn-add">+</button>
+            </div>
+
+            <!-- 선택된 종목 태그 -->
+            <div id="ticker-tags" class="ticker-tags"></div>
+        </section>
+
+        <!-- 섹터별 빠른 선택 -->
+        <section class="sector-section">
+            <div class="sector-group">
+                <div class="sector-title">🖥️ 빅테크</div>
+                <div class="sector-chips">
+                    <button class="chip" onclick="addTicker('AAPL')">AAPL</button>
+                    <button class="chip" onclick="addTicker('MSFT')">MSFT</button>
+                    <button class="chip" onclick="addTicker('GOOGL')">GOOGL</button>
+                    <button class="chip" onclick="addTicker('AMZN')">AMZN</button>
+                    <button class="chip" onclick="addTicker('META')">META</button>
+                </div>
+            </div>
+            <div class="sector-group">
+                <div class="sector-title">🤖 AI·반도체</div>
+                <div class="sector-chips">
+                    <button class="chip" onclick="addTicker('NVDA')">NVDA</button>
+                    <button class="chip" onclick="addTicker('AMD')">AMD</button>
+                    <button class="chip" onclick="addTicker('TSM')">TSM</button>
+                    <button class="chip" onclick="addTicker('AVGO')">AVGO</button>
+                </div>
+            </div>
+            <div class="sector-group">
+                <div class="sector-title">📊 대표 ETF</div>
+                <div class="sector-chips">
+                    <button class="chip" onclick="addTicker('SPY')">SPY</button>
+                    <button class="chip" onclick="addTicker('QQQ')">QQQ</button>
+                    <button class="chip" onclick="addTicker('SOXX')">SOXX</button>
+                    <button class="chip" onclick="addTicker('ARKK')">ARKK</button>
+                    <button class="chip" onclick="addTicker('VTI')">VTI</button>
+                </div>
+            </div>
+            <div class="sector-group">
+                <div class="sector-title">⚡ 전기차·에너지</div>
+                <div class="sector-chips">
+                    <button class="chip" onclick="addTicker('TSLA')">TSLA</button>
+                    <button class="chip" onclick="addTicker('RIVN')">RIVN</button>
+                    <button class="chip" onclick="addTicker('ENPH')">ENPH</button>
+                </div>
+            </div>
+            <div class="sector-group">
+                <div class="sector-title">🇰🇷 한국 대표</div>
+                <div class="sector-chips">
+                    <button class="chip" onclick="addTicker('005930.KS')">삼성전자</button>
+                    <button class="chip" onclick="addTicker('000660.KS')">SK하이닉스</button>
+                    <button class="chip" onclick="addTicker('035420.KS')">NAVER</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 기간 선택 -->
+        <section class="date-section">
+            <div class="date-row">
+                <div class="date-field">
+                    <label>시작일</label>
+                    <input type="date" id="start-date">
+                </div>
+                <span class="date-sep">~</span>
+                <div class="date-field">
+                    <label>종료일</label>
+                    <input type="date" id="end-date">
+                </div>
+                <button id="apply-date-btn" class="btn-apply">적용</button>
+            </div>
+            <div class="quick-periods">
+                <button class="period-chip active" data-period="1mo">1개월</button>
+                <button class="period-chip" data-period="3mo">3개월</button>
+                <button class="period-chip" data-period="6mo">6개월</button>
+                <button class="period-chip" data-period="1y">1년</button>
+                <button class="period-chip" data-period="max">전체</button>
+            </div>
+        </section>
+
+        <!-- 차트 영역 -->
+        <section class="chart-section">
+            <div class="chart-header">
+                <span class="chart-title">수익률 비교</span>
+                <span class="chart-unit">%</span>
+            </div>
+            <div id="chart-container"></div>
+            <div id="legend" class="legend"></div>
+        </section>
+
+        <!-- 로딩 -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/chart.js"></script>
+</body>
+
+</html>
