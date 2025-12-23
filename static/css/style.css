@@ -377,3 +377,515 @@ body {
         padding-bottom: calc(20px + env(safe-area-inset-bottom));
     }
 }
+
+/* 탭 네비게이션 */
+.tab-nav {
+    display: flex;
+    background: #FFFFFF;
+    border-bottom: 1px solid #E5E8EB;
+}
+
+.tab-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 14px 16px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #8B95A1;
+    cursor: pointer;
+    font-family: inherit;
+    position: relative;
+}
+
+.tab-btn.active {
+    color: #3182F6;
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #3182F6;
+}
+
+/* 탭 콘텐츠 */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* 히트맵 기간 선택 */
+.heatmap-period-section {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #FFFFFF;
+    overflow-x: auto;
+}
+
+.heatmap-period-btn {
+    background: #F7F8FA;
+    border: none;
+    border-radius: 20px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #8B95A1;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.heatmap-period-btn.active {
+    background: #3182F6;
+    color: #FFFFFF;
+}
+
+/* 지표 선택 */
+.metric-section {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+    background: #FFFFFF;
+    overflow-x: auto;
+}
+
+.metric-btn {
+    background: #FFFFFF;
+    border: 1px solid #E5E8EB;
+    border-radius: 16px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4E5968;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.metric-btn.active {
+    background: #191F28;
+    border-color: #191F28;
+    color: #FFFFFF;
+}
+
+/* 히트맵 필터 */
+.heatmap-filter-section {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px 12px;
+    background: #FFFFFF;
+    border-bottom: 1px solid #E5E8EB;
+    overflow-x: auto;
+}
+
+.filter-btn {
+    background: #FFFFFF;
+    border: 1px solid #E5E8EB;
+    border-radius: 16px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #4E5968;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.filter-btn.active {
+    background: #191F28;
+    border-color: #191F28;
+    color: #FFFFFF;
+}
+
+/* 히트맵 그리드 - Finviz 스타일 */
+.heatmap-section {
+    padding: 0;
+    background: #0b0e11;
+    min-height: calc(100vh - 280px);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.heatmap-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    min-width: 100%;
+    height: auto;
+    background: #0b0e11;
+}
+
+/* Finviz 섹터 컨테이너 */
+.finviz-sector {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    border-right: 1px solid #1a1d21;
+}
+
+.finviz-sector-header {
+    background: #1a1d21;
+    color: #888;
+    padding: 4px 6px;
+    font-size: 9px;
+    font-weight: bold;
+    text-align: center;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.finviz-stocks {
+    flex: 1;
+    background: #0b0e11;
+}
+
+.heatmap-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: transform 0.15s;
+    flex: 1 1 80px;
+    min-width: 60px;
+    min-height: 60px;
+}
+
+.heatmap-cell:active {
+    transform: scale(0.95);
+}
+
+.cell-symbol {
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.cell-change {
+    font-size: 11px;
+    font-weight: 600;
+    color: #FFFFFF;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    margin-top: 2px;
+}
+
+/* 히트맵 범례 */
+.heatmap-legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #191F28;
+}
+
+.legend-bar {
+    width: 150px;
+    height: 12px;
+    border-radius: 6px;
+    background: linear-gradient(to right, #d63031, #636e72, #00b894);
+}
+
+.heatmap-legend .legend-label {
+    font-size: 12px;
+    color: #8B95A1;
+    font-weight: 500;
+}
+
+/* 히트맵 로딩/에러 메시지 */
+.heatmap-loading,
+.heatmap-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 300px;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 600;
+    background: rgba(30, 35, 45, 0.9);
+    border-radius: 12px;
+}
+
+/* Finviz Treemap 스타일 */
+.treemap-sector {
+    display: flex;
+    flex-direction: column;
+    background: #1a1d21;
+    border-radius: 4px;
+    overflow: hidden;
+    min-width: 100px;
+    margin: 2px;
+    flex: 1;
+}
+
+.sector-header {
+    background: #2a2e35;
+    color: #a0a8b3;
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    text-align: center;
+    border-bottom: 1px solid #3a3e45;
+}
+
+.stocks-grid {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 2px;
+    gap: 1px;
+}
+
+.treemap-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.treemap-cell:hover {
+    z-index: 10;
+    transform: scale(1.08);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.cell-ticker {
+    font-size: 11px;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.cell-ticker-small {
+    font-size: 8px;
+    font-weight: 700;
+    color: #FFFFFF;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.cell-price {
+    font-size: 9px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.treemap-cell .cell-change {
+    font-size: 9px;
+    margin-top: 0;
+}
+
+/* 종목 상세 팝업 */
+.stock-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #1a1d21;
+    border: 1px solid #3182F6;
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 260px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #333;
+}
+
+.popup-ticker {
+    font-size: 20px;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+.popup-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.popup-close:hover {
+    color: #fff;
+}
+
+.popup-content {
+    margin-bottom: 16px;
+}
+
+.popup-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #2a2e35;
+}
+
+.popup-row:last-child {
+    border-bottom: none;
+}
+
+.popup-label {
+    color: #888;
+    font-size: 13px;
+}
+
+.popup-value {
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.popup-value.up {
+    color: #30cc5a;
+}
+
+.popup-value.down {
+    color: #f23645;
+}
+
+.popup-chart-btn {
+    width: 100%;
+    padding: 12px;
+    background: #3182F6;
+    border: none;
+    border-radius: 8px;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.popup-chart-btn:hover {
+    background: #1a6dd9;
+}
+
+/* 섹터 종목 리스트 모달 */
+.sector-list-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #1a1d21;
+    border: 1px solid #3182F6;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 450px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.sector-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid #333;
+}
+
+.sector-list-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+.sector-list-close {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.sector-list-close:hover {
+    color: #fff;
+}
+
+.sector-list-subheader {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    padding: 8px 16px;
+    background: #2a2e35;
+    color: #888;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.sector-list-body {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.sector-list-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    padding: 12px 16px;
+    border-bottom: 1px solid #2a2e35;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sector-list-row:hover {
+    background: #2a2e35;
+}
+
+.sl-ticker {
+    font-weight: 600;
+    color: #fff;
+}
+
+.sl-price {
+    color: #ccc;
+}
+
+.sl-change {
+    font-weight: 600;
+}
+
+.sl-change.up {
+    color: #30cc5a;
+}
+
+.sl-change.down {
+    color: #f23645;
+}
+
+.sl-cap {
+    color: #888;
+    font-size: 12px;
+}
