@@ -40,6 +40,46 @@ body {
     color: #191F28;
 }
 
+/* 탭 네비게이션 */
+.tab-nav {
+    display: flex;
+    background: #FFFFFF;
+    border-bottom: 1px solid #E5E8EB;
+    padding: 0 16px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 14px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 15px;
+    font-weight: 600;
+    color: #8B95A1;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.tab-btn.active {
+    color: #3182F6;
+    border-bottom-color: #3182F6;
+}
+
+.tab-btn:hover {
+    color: #3182F6;
+}
+
+/* 탭 콘텐츠 */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
 /* 검색 영역 */
 .search-section {
     background: #FFFFFF;
