@@ -50,11 +50,26 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        container.innerHTML = '<div class="heatmap-loading">📊 S&P 500 로딩 중...</div>';
+        container.innerHTML = '<div class="heatmap-loading">📊 히트맵 로딩 중...</div>';
 
         try {
-            const res = await fetch(`/api/heatmap-cached?period=${currentHeatmapPeriod}`);
-            const data = await res.json();
+            // 정적 JSON 파일 먼저 시도 (즉시 로딩)
+            let data;
+            try {
+                const staticRes = await fetch('/static/data/heatmap.json');
+                if (staticRes.ok) {
+                    data = await staticRes.json();
+                }
+            } catch (e) {
+                console.log('Static JSON not available, falling back to API');
+            }
+
+            // 정적 JSON 없으면 API 폴백
+            if (!data || !data.sectors) {
+                const res = await fetch(`/api/heatmap-cached?period=${currentHeatmapPeriod}`);
+                data = await res.json();
+            }
+
             if (data.sectors && data.sectors.length > 0) {
                 heatmapCache = data;
                 renderTreemap(data);
