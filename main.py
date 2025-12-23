@@ -7,9 +7,23 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 
 app = FastAPI(title="주식 비교 차트", version="1.0.0")
+
+# CORS 설정 - 토스 앱인토스 도메인 허용
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://chartview.apps.tossmini.com",        # 실제 서비스 환경
+        "https://chartview.private-apps.tossmini.com", # 콘솔 QR 테스트 환경
+        "*",  # 개발용 (프로덕션에서는 제거 권장)
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 정적 파일 및 템플릿
 app.mount("/static", StaticFiles(directory="static"), name="static")
