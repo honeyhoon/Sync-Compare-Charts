@@ -1,0 +1,18 @@
+name: Update Heatmap Data
+
+on:
+  schedule:
+      # Run every 30 minutes on weekdays (UTC)
+          - cron: '*/30 * * * 1-5'  # Mon-Fri, every 30 mins
+            workflow_dispatch:  # Manual trigger
+
+            jobs:
+              update-heatmap:
+                  runs-on: ubuntu-latest
+
+                          steps:
+                                - name: Checkout repository
+                                        uses: actions/checkout@v4
+
+                                                    - name: Set up Python
+                                                            uses: actions/se
