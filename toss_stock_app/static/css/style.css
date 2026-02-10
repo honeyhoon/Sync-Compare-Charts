@@ -1659,6 +1659,15 @@ body {
     padding: 0 2px;
 }
 
+.no-chart {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--toss-gray-400);
+    font-size: 12px;
+}
+
 .mc-value {
     font-size: 24px;
     font-weight: 800;
