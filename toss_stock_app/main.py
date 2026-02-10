@@ -206,7 +206,50 @@ async def search_ticker(q: str):
                 "name": stock["name"]
             })
     
-    return {"results": results[:10]}  # 최대 10개
+    return {"results": results[:10]}
+
+
+@app.get("/api/heatmap")
+async def heatmap_data():
+    """히트맵용 주요 종목 데이터 API"""
+    # 히트맵에 표시할 주요 종목 리스트
+    heatmap_tickers = [
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AMD",
+        "JPM", "V", "MA", "UNH", "JNJ", "LLY", "XOM", "AVGO",
+        "005930.KS", "000660.KS", "035420.KS", "035720.KS", "005380.KS"
+    ]
+    
+    def fetch_change(ticker):
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            # regularMarketChangePercent 또는 trailingPegRatio 등은 실시간성에 따라 다를 수 있음
+            # 간단하게 previousClose와 currentPrice 비교
+            current = info.get("currentPrice") or info.get("regularMarketPrice")
+            prev = info.get("regularMarketPreviousClose")
+            
+            if current and prev:
+                change = ((current - prev) / prev) * 100
+                return {
+                    "ticker": ticker,
+                    "name": info.get("shortName") or ticker,
+                    "change": round(change, 2),
+                    "price": current,
+                    "marketCap": info.get("marketCap", 0)
+                }
+        except:
+            return None
+        return None
+
+    results = []
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_change, t): t for t in heatmap_tickers}
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                results.append(res)
+    
+    return {"results": results}
 
 
 @app.get("/api/fwd-per")
