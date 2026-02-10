@@ -554,15 +554,162 @@ body {
     }
 }
 
-/* Safe Area */
-@supports (padding-top: env(safe-area-inset-top)) {
-    .header {
-        padding-top: calc(16px + env(safe-area-inset-top));
+/* 히트맵 탭 스타일 */
+.heatmap-section {
+    padding: 24px;
+    margin: 12px 16px;
+    background: var(--toss-white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--card-shadow);
+}
+
+.heatmap-header {
+    margin-bottom: 24px;
+}
+
+.heatmap-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--toss-gray-900);
+    margin-bottom: 8px;
+}
+
+.heatmap-desc {
+    font-size: 14px;
+    color: var(--toss-gray-600);
+}
+
+.heatmap-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    min-height: 300px;
+}
+
+.heatmap-box {
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: var(--transition);
+    color: var(--toss-white);
+    text-align: center;
+}
+
+.heatmap-box:hover {
+    transform: scale(1.05);
+    z-index: 10;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.hb-ticker {
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.hb-change {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 2px 0;
+}
+
+.hb-name {
+    font-size: 10px;
+    opacity: 0.8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+/* 히트맵 색상 단계 */
+.heatmap-box.up-deep {
+    background: #F04452;
+}
+
+/* 강한 상승 (붉은색 - 한국 기준) */
+.heatmap-box.up {
+    background: #FF8A92;
+}
+
+.heatmap-box.neutral {
+    background: #E5E8EB;
+    color: #6B7684;
+}
+
+.heatmap-box.down {
+    background: #7EB1FF;
+}
+
+.heatmap-box.down-deep {
+    background: #3182F6;
+}
+
+/* 강한 하락 (파란색 - 한국 기준) */
+
+/* 미국 주식 색상 기준인 경우 (상승 초록, 하락 빨강) 도 고려할 수 있으나, 
+   사용자의 기존 요청 맥락(한국 주식 포함)에 맞춰 한국식/토스식으로 설정 */
+
+.heatmap-legend {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--toss-gray-100);
+}
+
+.legend-box {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: var(--toss-white);
+}
+
+.heatmap-loading,
+.heatmap-error {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 0;
+    color: var(--toss-gray-500);
+}
+
+@media (max-width: 480px) {
+    .heatmap-container {
+        grid-template-columns: repeat(3, 1fr);
     }
 
-    #app {
-        padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    .heatmap-box {
+        padding: 8px;
     }
+
+    .hb-ticker {
+        font-size: 14px;
+    }
+
+    .hb-change {
+        font-size: 11px;
+    }
+}
+
+/* 탭 네비게이션 개선 (공통) */
+.tab-nav {
+    display: flex;
+    background: var(--toss-white);
+    padding: 0 8px;
+    border-bottom: 1px solid var(--toss-gray-100);
+    position: sticky;
+    top: 58px;
+    /* 헤더 높이만큼 */
+    z-index: 900;
 }
 
 /* 탭 네비게이션 */
