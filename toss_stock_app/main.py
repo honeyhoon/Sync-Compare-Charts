@@ -343,12 +343,15 @@ async def macro_data():
     def fetch_yahoo_fallback(symbol, info):
         """FRED 실패 시 야후 파이낸스 대체 지표 수집"""
         fallback_sym = info.get("fallback")
-        if not fallback_sym: return None
+        # 대체제가 없어도 None 리턴 금지 -> 에러 객체 리턴
+        if not fallback_sym: 
+            return {"original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True}
         
         try:
             stock = yf.Ticker(fallback_sym)
             hist = stock.history(period="6mo")
-            if hist.empty: return None
+            if hist.empty: 
+                return {"original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True}
             
             current = hist['Close'].iloc[-1]
             prev = hist['Close'].iloc[-2]
@@ -364,7 +367,8 @@ async def macro_data():
                 "value": round(current, 2), "change": round(change, 2),
                 "chart_data": chart_data[-100:]
             }
-        except: return None
+        except: 
+            return {"original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True}
 
     def fetch_fred_data(symbol, info):
         """FRED 공식 API 사용 (가장 확실한 방법)"""
@@ -372,82 +376,47 @@ async def macro_data():
         base_url = "https://api.stlouisfed.org/fred/series/observations"
         
         try:
-            # 최근 2년치 데이터 요청 (limit 대신 observation_start 사용 가능하나 limit도 유용)
             params = {
-                "series_id": symbol,
-                "api_key": API_KEY,
-                "file_type": "json",
-                "sort_order": "desc",
-                "limit": 120  # 최근 120일치
+                "series_id": symbol, "api_key": API_KEY, "file_type": "json",
+                "sort_order": "asc", "limit": 120
             }
             
             response = requests.get(base_url, params=params, timeout=5)
-            response.raise_for_status()
-            data = response.json()
+            # 400 Bad Request (존재하지 않는 심볼 등) 시 예외 발생 -> Catch -> Yahoo Fallback 시도
+            response.raise_for_status() 
             
-            observations = data.get("observations", [])
-            if not observations: raise ValueError("No observations")
-            
-            # FRED API는 desc 정렬 시 최신 데이터가 [0]에 옴
-            # 하지만 차트 라이브러리는 과거->미래 순서(asc)를 원하므로 뒤집어야 함
-            # 또는 sort_order='asc'로 요청하는 게 처리하기 편함. 여기서는 asc로 변경.
-            
-            # 다시 설정: 차트 그리려면 오름차순(과거->현재)이 편함
-            params["sort_order"] = "asc"
-            response = requests.get(base_url, params=params, timeout=5)
             data = response.json()
             observations = data.get("observations", [])
             
             if not observations: raise ValueError("No observations")
 
-            # 데이터 가공
             chart_data = []
             for obs in observations:
                 val = obs["value"]
-                if val == ".": continue # 결측치
-                chart_data.append({
-                    "time": obs["date"],
-                    "value": float(val)
-                })
+                if val == ".": continue
+                chart_data.append({"time": obs["date"], "value": float(val)})
             
             if not chart_data: raise ValueError("No valid data")
             
-            # 최근 값 및 변화량
             current = chart_data[-1]["value"]
             prev = chart_data[-2]["value"] if len(chart_data) > 1 else current
-            
-            if prev != 0: 
-                change = ((current - prev) / prev) * 100
-            else: 
-                change = 0.0
+            change = ((current - prev) / prev) * 100 if prev != 0 else 0.0
             
             return {
-                "original_symbol": symbol,
-                "symbol": symbol, 
-                "name": info["name"], 
-                "desc": info["desc"],
-                "link": info["link"],
-                "value": round(current, 2), 
-                "change": round(change, 2),
-                "chart_data": chart_data # 이미 오름차순
+                "original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"],
+                "value": round(current, 2), "change": round(change, 2), "chart_data": chart_data
             }
             
         except Exception as e:
             print(f"FRED API failed for {symbol}: {e} -> Trying Fallback")
-            fallback_res = fetch_yahoo_fallback(symbol, info)
-            if fallback_res: return fallback_res
-            
-            return {
-                "original_symbol": symbol,
-                "symbol": symbol, "name": info["name"], "desc": info["desc"],
-                "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True
-            }
+            return fetch_yahoo_fallback(symbol, info) # 결과(성공/실패 객체)를 그대로 리턴
 
     def fetch_indicator(symbol, info):
         try:
             if info.get("source") == "FRED":
                 return fetch_fred_data(symbol, info)
 
+            # Yahoo 일반
             stock = yf.Ticker(symbol)
             hist = stock.history(period="6mo")
             if hist.empty: 
