@@ -3,16 +3,37 @@
  * PER, PBR, PSR, EV/EBITDA, 배당률, 수익성 지표 선택
  */
 
-let perTickers = [];
 let perData = [];
 let currentSort = 'default';
-let currentMetric = 'fwd_per';
+let currentMetric = 'overview';
+const perTickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA', '005930.KS', '000660.KS'];
 
 // 티커 → 기업명 매핑
 const perTickerNameMap = {};
 
 // 지표 메타 정보
 const METRIC_CONFIG = {
+    'overview': {
+        title: '종합 밸류에이션 비교',
+        description: '주요 투자 지표를 한눈에 비교합니다.',
+        columns: [
+            { key: 'forwardPE', label: 'FWD PER', format: 'number', color: true },
+            { key: 'pbr', label: 'PBR', format: 'number', color: true },
+            { key: 'dividendYield', label: '배당률(%)', format: 'percent', color: true },
+            { key: 'roe', label: 'ROE(%)', format: 'percent', color: true }
+        ],
+        barKey: 'forwardPE',
+        barLabel: 'FWD PER',
+        sortKey: 'forwardPE',
+        colorFunc: (v) => v > 0 && v < 20 ? '#3182F6' : '#6B7684',
+        gradeFunc: (v) => {
+            if (v == null || isNaN(v)) return '-';
+            if (v <= 0) return '적자';
+            if (v < 15) return '저평가';
+            if (v < 30) return '보통';
+            return '고평가';
+        }
+    },
     fwd_per: {
         title: 'Forward PER (전망) 비교',
         description: '내년 예상 이익 대비 주가 수준입니다. 낮을수록 앞으로의 성장에 비해 저렴하다는 의미입니다.',
@@ -419,8 +440,8 @@ function renderPerTable() {
 
         config.columns.forEach((col, ci) => {
             const val = stock[col.key];
-            if (ci === 0 && col.color) {
-                // 메인 지표 - 색상 + 등급
+            if (currentMetric !== 'overview' && ci === 0 && col.color) {
+                // 단일 지표 상세 모드 - 색상 + 등급
                 const color = config.colorFunc(val);
                 const grade = config.gradeFunc(val);
                 html += `<td class="td-per">
@@ -428,9 +449,22 @@ function renderPerTable() {
                     <span class="per-grade" style="color:${color}">${grade}</span>
                 </td>`;
             } else if (col.color) {
-                const color = config.colorFunc(val);
+                // 종합 모드 또는 일반 컬럼 - 수치만 깔끔하게
+                let displayVal = '-';
+                let color = 'var(--toss-gray-900)';
+
+                if (val != null && !isNaN(val)) {
+                    displayVal = val.toFixed(1);
+                    if (col.key === 'forwardPE' || col.key === 'trailingPE') {
+                        if (val > 0 && val < 15) color = 'var(--toss-blue)';
+                        if (val > 40) color = 'var(--toss-red)';
+                    } else if (col.key === 'dividendYield' || col.key === 'roe') {
+                        if (val > 5) color = 'var(--toss-green)';
+                    }
+                }
+
                 html += `<td class="td-per">
-                    <span class="per-value" style="color:${color}">${val != null && !isNaN(val) ? val.toFixed(1) : '-'}</span>
+                    <span class="per-value" style="color:${color}">${displayVal}</span>
                 </td>`;
             } else {
                 html += `<td class="td-eps">${formatValue(val, col.format, isKR)}</td>`;
