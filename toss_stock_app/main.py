@@ -255,6 +255,8 @@ async def heatmap_data():
     
     return {"results": results}
 
+from datetime import datetime, timedelta
+
 # 전역 캐시 (메모리)
 MACRO_CACHE = {
     "data": None,
@@ -267,8 +269,8 @@ async def macro_data():
     global MACRO_CACHE
     current_time = time.time()
     
-    # 1시간(3600초) 캐시 유효성 검사
-    if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 3600):
+    # 6시간(21600초) 캐시 유효성 검사 (매크로 지표는 자주 안 변함)
+    if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 21600):
         return MACRO_CACHE["data"]
 
     # 메르 스타일 핵심 지표 (FRED 원본 심볼)
@@ -335,11 +337,14 @@ async def macro_data():
     }
 
     def fetch_fred_data(symbol, info):
-        """FRED CSV 직접 다운로드 및 파싱 (User-Agent 추가)"""
+        """FRED CSV 직접 다운로드 및 파싱 (최적화: 최근 2년 데이터만 요청)"""
         try:
-            url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={symbol}&sort_order=desc"
+            # 최근 2년치 데이터만 요청 (속도 향상 핵심)
+            start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
+            url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={symbol}&cosd={start_date}&sort_order=desc"
+            
             # 연준 봇 차단 방지용 헤더
-            storage_options = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            storage_options = {'User-Agent': 'Mozilla/5.0'}
             
             df = pd.read_csv(url, storage_options=storage_options)
             
