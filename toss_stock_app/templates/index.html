@@ -23,6 +23,7 @@
         <nav class="tab-nav">
             <button class="tab-btn active" data-tab="chart">📈 차트 비교</button>
             <button class="tab-btn" data-tab="fwdper">📊 밸류에이션</button>
+            <button class="tab-btn" data-tab="heatmap">🔥 히트맵</button>
         </nav>
 
         <!-- 차트 탭 -->
@@ -332,6 +333,29 @@
             </section>
         </div>
 
+        <!-- 히트맵 탭 -->
+        <div id="heatmap-tab" class="tab-content">
+            <section class="heatmap-section">
+                <div class="heatmap-header">
+                    <h2 class="heatmap-title">🔥 시장 히트맵</h2>
+                    <p class="heatmap-desc">주요 종목의 오늘의 주가 움직임을 한눈에 확인하세요.</p>
+                </div>
+
+                <div id="heatmap-container" class="heatmap-container">
+                    <!-- JS에서 렌더링 -->
+                    <div class="heatmap-loading">데이터를 불러오고 있습니다...</div>
+                </div>
+
+                <div class="heatmap-legend">
+                    <span class="legend-box down-deep">-3%</span>
+                    <span class="legend-box down">-1%</span>
+                    <span class="legend-box neutral">0%</span>
+                    <span class="legend-box up">+1%</span>
+                    <span class="legend-box up-deep">+3%</span>
+                </div>
+            </section>
+        </div>
+
         <!-- 푸터 / 면책 조항 -->
         <footer class="app-footer">
             <div class="disclaimer">
@@ -349,6 +373,7 @@
 
     <script src="/static/js/chart.js"></script>
     <script src="/static/js/fwdper.js"></script>
+    <script src="/static/js/heatmap.js"></script>
 </body>
 
 </html>
