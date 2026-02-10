@@ -267,15 +267,261 @@ MACRO_CACHE = {
 
 @app.get("/api/macro")
 async def macro_data():
-    """FRED 및 주요 글로벌 매크로 지표 (10종 패키지) - 캐싱 적용"""
+    """FRED 및 주요 글로벌 매크로 지표 (10종 패키지)"""
     global MACRO_CACHE
     current_time = time.time()
     
-    # 6시간(21600초) 캐시 유효성 검사 (매크로 지표는 자주 안 변함)
-    if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 21600):
-        return MACRO_CACHE["data"]
+    # 6시간 캐싱 (임시 주석 처리 -> 배포 시 해제 권장)
+    # if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 21600):
+    #     return MACRO_CACHE["data"]
 
-    # 메르 스타일 핵심 지표 (FRED 원본 심볼 + 야후 Fallback 심볼)
+    # 1. 지표 정의 (메르 스타일 10종)
+    indicators = {
+        "T10Y2Y": {
+            "name": "장단기 금리차 (10Y-2Y)", 
+            "desc": "경기 침체 신호등. 0 이하(역전)로 내려갔다가 다시 올라올 때 침체가 시작되는 경향이 있습니다.",
+            "link": "https://fred.stlouisfed.org/series/T10Y2Y",
+            "source": "FRED", "fallback": None
+        },
+        "T10Y3M": {
+            "name": "장단기 금리차 (10Y-3M)", 
+            "desc": "연준이 가장 신뢰하는 침체 지표. 이 수치가 마이너스면 연준의 긴축이 과도하다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/T10Y3M",
+            "source": "FRED", "fallback": None
+        },
+        "BAMLH0A0HYM2": {
+            "name": "하이일드 스프레드 (Risk)", 
+            "desc": "기업 부도 위험. 이 그래프가 치솟으면 기업들의 자금줄이 마르고 있다는 강력한 경고입니다.",
+            "link": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
+            "source": "FRED", "fallback": "HYG"
+        },
+        "RRPONTSYD": {
+            "name": "역래포 잔액 (Liquidity)", 
+            "desc": "시장의 예비 자금. 이 돈이 줄어들면 시장에 유동성이 공급되어 주가 방어에 도움이 됩니다.",
+            "link": "https://fred.stlouisfed.org/series/RRPONTSYD",
+            "source": "FRED", "fallback": "BIL"
+        },
+        "DFII10": {
+            "name": "10년 실질금리 (TIPS)", 
+            "desc": "인플레이션을 뺀 진짜 금리. 이 금리가 높으면(플러스) 자산 시장(주식, 부동산)은 하락 압력을 받습니다.",
+            "link": "https://fred.stlouisfed.org/series/DFII10",
+            "source": "FRED", "fallback": "TIP"
+        },
+        "T10YIE": {
+            "name": "기대인플레이션 (BEI)", 
+            "desc": "향후 10년 물가 예상치. 연준의 목표(2%)보다 높으면 금리 인하가 지연될 수 있습니다.",
+            "link": "https://fred.stlouisfed.org/series/T10YIE",
+            "source": "FRED", "fallback": None
+        },
+        "UNRATE": {
+            "name": "실업률 (Unemployment)", 
+            "desc": "실물 경기 바닥 신호. 실업률이 저점에서 0.5%p 이상 오르면(삼의 법칙) 침체 초기입니다.",
+            "link": "https://fred.stlouisfed.org/series/UNRATE",
+            "source": "FRED", "fallback": None
+        },
+        "RSAFS": {
+            "name": "소매판매 (Retail Sales)", 
+            "desc": "미국 경제의 70%인 소비의 힘. 소비가 꺾이면 기업 실적이 나빠지고 경기 침체가 옵니다.",
+            "link": "https://fred.stlouisfed.org/series/RSAFS",
+            "source": "FRED", "fallback": "XRT"
+        },
+        "WALCL": {
+            "name": "연준 총자산 (Fed Balance)", 
+            "desc": "연준이 푼 돈의 총량(QT/QE). 그래프가 꺾여 내려가면 시장 유동성이 줄어들고 있다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/WALCL",
+            "source": "FRED", "fallback": "BTC-USD"
+        },
+        "^VIX": {
+            "name": "공포 지수 (VIX)", 
+            "desc": "투자 심리 지표. 20 이하면 평온, 30 이상이면 패닉 상태입니다.",
+            "link": "https://finance.yahoo.com/quote/%5EVIX",
+            "source": "YAHOO", "fallback": None
+        },
+    }
+
+    # 2. 헬퍼 함수 정의
+    def fetch_yahoo_fallback(symbol, info):
+        """FRED 실패 시 야후 파이낸스 대체 지표 수집"""
+        fallback_sym = info.get("fallback")
+        if not fallback_sym: return None
+        
+        try:
+            stock = yf.Ticker(fallback_sym)
+            hist = stock.history(period="6mo")
+            if hist.empty: return None
+            
+            current = hist['Close'].iloc[-1]
+            prev = hist['Close'].iloc[-2]
+            change = ((current - prev) / prev) * 100
+            chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
+            
+            return {
+                "original_symbol": symbol,
+                "symbol": fallback_sym, 
+                "name": info["name"] + " (대체)", 
+                "desc": info["desc"] + " [FRED 접속 실패로 대체 지표]",
+                "link": f"https://finance.yahoo.com/quote/{fallback_sym}",
+                "value": round(current, 2), "change": round(change, 2),
+                "chart_data": chart_data[-100:]
+            }
+        except: return None
+
+    def fetch_fred_data(symbol, info):
+        """FRED 공식 API 사용 (가장 확실한 방법)"""
+        API_KEY = "e4549aea3557be8678ec41be06039285"
+        base_url = "https://api.stlouisfed.org/fred/series/observations"
+        
+        try:
+            # 최근 2년치 데이터 요청 (limit 대신 observation_start 사용 가능하나 limit도 유용)
+            params = {
+                "series_id": symbol,
+                "api_key": API_KEY,
+                "file_type": "json",
+                "sort_order": "desc",
+                "limit": 120  # 최근 120일치
+            }
+            
+            response = requests.get(base_url, params=params, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+            
+            observations = data.get("observations", [])
+            if not observations: raise ValueError("No observations")
+            
+            # FRED API는 desc 정렬 시 최신 데이터가 [0]에 옴
+            # 하지만 차트 라이브러리는 과거->미래 순서(asc)를 원하므로 뒤집어야 함
+            # 또는 sort_order='asc'로 요청하는 게 처리하기 편함. 여기서는 asc로 변경.
+            
+            # 다시 설정: 차트 그리려면 오름차순(과거->현재)이 편함
+            params["sort_order"] = "asc"
+            response = requests.get(base_url, params=params, timeout=5)
+            data = response.json()
+            observations = data.get("observations", [])
+            
+            if not observations: raise ValueError("No observations")
+
+            # 데이터 가공
+            chart_data = []
+            for obs in observations:
+                val = obs["value"]
+                if val == ".": continue # 결측치
+                chart_data.append({
+                    "time": obs["date"],
+                    "value": float(val)
+                })
+            
+            if not chart_data: raise ValueError("No valid data")
+            
+            # 최근 값 및 변화량
+            current = chart_data[-1]["value"]
+            prev = chart_data[-2]["value"] if len(chart_data) > 1 else current
+            
+            if prev != 0: 
+                change = ((current - prev) / prev) * 100
+            else: 
+                change = 0.0
+            
+            return {
+                "original_symbol": symbol,
+                "symbol": symbol, 
+                "name": info["name"], 
+                "desc": info["desc"],
+                "link": info["link"],
+                "value": round(current, 2), 
+                "change": round(change, 2),
+                "chart_data": chart_data # 이미 오름차순
+            }
+            
+        except Exception as e:
+            print(f"FRED API failed for {symbol}: {e} -> Trying Fallback")
+            fallback_res = fetch_yahoo_fallback(symbol, info)
+            if fallback_res: return fallback_res
+            
+            return {
+                "original_symbol": symbol,
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True
+            }
+
+    def fetch_indicator(symbol, info):
+        try:
+            if info.get("source") == "FRED":
+                return fetch_fred_data(symbol, info)
+
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="6mo")
+            if hist.empty: 
+                return {"original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True}
+
+            current, prev = hist['Close'].iloc[-1], hist['Close'].iloc[-2]
+            change = ((current - prev) / prev) * 100
+            chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
+            
+            return {
+                "original_symbol": symbol,
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
+                "value": round(current, 2), "change": round(change, 2), "chart_data": chart_data[-100:]
+            }
+        except: 
+            return {"original_symbol": symbol, "symbol": symbol, "name": info["name"], "desc": info["desc"], "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True}
+
+    # 3. 병렬 실행
+    target_symbols = list(indicators.keys())
+    results = []
+    with ThreadPoolExecutor(max_workers=len(target_symbols)) as executor:
+        futures = {executor.submit(fetch_indicator, s, indicators[s]): s for s in target_symbols}
+        for future in as_completed(futures):
+            res = future.result()
+            if res: results.append(res)
+    
+    # 4. 정렬 (매우 중요: original_symbol 사용)
+    ordered = [r for s in target_symbols for r in results if r.get('original_symbol') == s]
+    
+    response_data = {"results": ordered}
+    # MACRO_CACHE["data"] = response_data
+    # MACRO_CACHE["timestamp"] = current_time
+    
+    return response_data
+
+    # ... (indicators 딕셔너리)
+
+    # ... (fetch_yahoo_fallback, fetch_fred_data 함수)
+
+    def fetch_indicator(symbol, info):
+        try:
+            # FRED 소스인 경우 별도 처리
+            if info.get("source") == "FRED":
+                return fetch_fred_data(symbol, info)
+
+            # Yahoo Finance 일반 지표
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="6mo")
+            if hist.empty: 
+                print(f"Yahoo fetch error {symbol}")
+                return {
+                    "original_symbol": symbol,
+                    "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                    "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True
+                }
+
+            current, prev = hist['Close'].iloc[-1], hist['Close'].iloc[-2]
+            change = ((current - prev) / prev) * 100
+            chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
+            
+            return {
+                "original_symbol": symbol, # 정렬용 원본 키 (필수)
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
+                "value": round(current, 2), "change": round(change, 2),
+                "chart_data": chart_data[-100:]
+            }
+        except Exception as e:
+            return {
+                "original_symbol": symbol,
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"], "value": 0, "change": 0, "chart_data": [], "error": True
+            }
     indicators = {
         "T10Y2Y": {
             "name": "장단기 금리차 (10Y-2Y)", 
