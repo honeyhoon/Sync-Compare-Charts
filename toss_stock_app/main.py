@@ -277,30 +277,35 @@ async def macro_data():
             "desc": "경제의 '기준 금리'. 모든 대출과 주식 가치 평가의 출발점입니다.",
             "link": "https://finance.yahoo.com/quote/%5ETNX"
         },
-        "10Y2Y": {
+        "T10Y2Y": {
             "name": "장단기 금리차 (10Y-2Y)", 
             "desc": "침체 예보관. 0 이하(역전)로 내려가면 침체가 온다는 강력한 신호입니다.",
-            "link": "https://fred.stlouisfed.org/series/T10Y2Y"
+            "link": "https://fred.stlouisfed.org/series/T10Y2Y",
+            "source": "FRED"
         },
-        "BTC-USD": {
-            "name": "비트코인 (Liquidity Proxy)", 
-            "desc": "시장 유동성의 바로미터. 연준이 돈을 풀면 가장 먼저 반응하는 '탄광 속 카나리아'입니다.",
-            "link": "https://finance.yahoo.com/quote/BTC-USD"
+        "WALCL": {
+            "name": "연준 총자산 (Balance Sheet)", 
+            "desc": "연준이 찍어낸 돈의 총량. 그래프가 내려가면 시장에서 돈을 회수(긴축)하고 있다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/WALCL",
+            "source": "FRED"
         },
-        "TLT": {
-            "name": "미 20년물 국채 (TLT)", 
-            "desc": "장기 국채 가격. 금리가 내려갈 것으로 예상되면 이 가격이 오릅니다. (서학개미 최애픽)",
-            "link": "https://finance.yahoo.com/quote/TLT"
+        "RRPONTSYD": {
+            "name": "역래포 잔액 (Liquidity)", 
+            "desc": "시장의 '남는 돈' 저장고. 이 수치가 줄어들면 시중에 유동성이 공급되고 있다는 긍정적 신호입니다.",
+            "link": "https://fred.stlouisfed.org/series/RRPONTSYD",
+            "source": "FRED"
         },
-        "TIP": {
-            "name": "물가연동채 (Inflation)", 
-            "desc": "물가 상승을 방어하는 채권. 가격이 오르면 시장이 인플레이션을 우려하고 있다는 뜻입니다.",
-            "link": "https://finance.yahoo.com/quote/TIP"
+        "T10YIE": {
+            "name": "10년 기대인플레이션", 
+            "desc": "시장이 예상하는 미래 물가. 2%를 크게 상회하면 금리 인하가 어려워집니다.",
+            "link": "https://fred.stlouisfed.org/series/T10YIE",
+            "source": "FRED"
         },
-        "HYG": {
-            "name": "하이일드 채권 (Risk On)", 
-            "desc": "부실 기업들의 채권 가격. 그래프가 꺾이면 기업 자금난과 경기 하강이 시작됐음을 의미합니다.",
-            "link": "https://finance.yahoo.com/quote/HYG"
+        "BAMLH0A0HYM2": {
+            "name": "하이일드 스프레드 (Risk)", 
+            "desc": "부도 위험 지표. 그래프가 치솟으면 기업들이 자금을 구하기 어려워져 위기가 옵니다.",
+            "link": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
+            "source": "FRED"
         },
         "DX-Y.NYB": {
             "name": "달러 인덱스 (DXY)", 
@@ -324,26 +329,53 @@ async def macro_data():
         },
     }
 
+    def fetch_fred_data(symbol, info):
+        """FRED CSV 직접 다운로드 및 파싱"""
+        try:
+            url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={symbol}&sort_order=desc"
+            df = pd.read_csv(url)
+            
+            # 날짜 정렬 (오름차순) 및 최근 1년 데이터 확보
+            df['DATE'] = pd.to_datetime(df['DATE'])
+            df = df.sort_values('DATE')
+            df = df.set_index('DATE')
+            
+            # '.' 등의 결측치 처리 (FRED는 휴장일 등을 .으로 표시함)
+            df = df[pd.to_numeric(df[symbol], errors='coerce').notnull()]
+            df[symbol] = df[symbol].astype(float)
+            
+            recent = df.tail(120) # 최근 120일 (약 6개월)
+            if recent.empty: return None
+
+            current = recent[symbol].iloc[-1]
+            prev = recent[symbol].iloc[-2]
+            
+            # 금리나 인덱스 등은 단순 차이보다는 등락률이 중요하나, 스프레드/금리는 bp 단위 변화가 중요할 수도 있음.
+            # 통일성을 위해 여기서는 퍼센트 변화율(%)로 계산 (단, 0일 경우 제외)
+            if prev != 0:
+                change = ((current - prev) / prev) * 100
+            else:
+                change = 0.0
+
+            chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in recent[symbol].items()]
+            
+            return {
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
+                "value": round(current, 2), "change": round(change, 2),
+                "chart_data": chart_data
+            }
+        except Exception as e:
+            print(f"FRED fetch error {symbol}: {e}")
+            return None
+
     def fetch_indicator(symbol, info):
         try:
-            # 특수 계산 지표 처리 (장단기 금리차)
-            if symbol == "10Y2Y":
-                t10 = yf.Ticker("^TNX").history(period="6mo")
-                t2 = yf.Ticker("^IRX").history(period="6mo")
-                if not t10.empty and not t2.empty:
-                    df = t10['Close'] - t2['Close']
-                    df = df.dropna()
-                    current, prev = df.iloc[-1], df.iloc[-2]
-                    chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 3)} for t, v in df.items()]
-                    return {
-                        "symbol": symbol, "name": info["name"], "desc": info["desc"],
-                        "link": info["link"],
-                        "value": round(current, 3), "change": round(current - prev, 3),
-                        "chart_data": chart_data[-100:]
-                    }
-                return None
-            
-            # 일반 지표
+            # FRED 소스인 경우 별도 처리
+            if info.get("source") == "FRED":
+                return fetch_fred_data(symbol, info)
+
+            # Yahoo Finance 일반 지표
             stock = yf.Ticker(symbol)
             hist = stock.history(period="6mo")
             if hist.empty: return None
