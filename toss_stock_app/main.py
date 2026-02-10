@@ -255,10 +255,22 @@ async def heatmap_data():
     
     return {"results": results}
 
+# 전역 캐시 (메모리)
+MACRO_CACHE = {
+    "data": None,
+    "timestamp": 0
+}
 
 @app.get("/api/macro")
 async def macro_data():
-    """FRED 및 주요 글로벌 매크로 지표 (10종 패키지)"""
+    """FRED 및 주요 글로벌 매크로 지표 (10종 패키지) - 캐싱 적용"""
+    global MACRO_CACHE
+    current_time = time.time()
+    
+    # 1시간(3600초) 캐시 유효성 검사
+    if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 3600):
+        return MACRO_CACHE["data"]
+
     indicators = {
         "^TNX": {
             "name": "미 10년물 국채 금리", 
@@ -267,27 +279,27 @@ async def macro_data():
         },
         "10Y2Y": {
             "name": "장단기 금리차 (10Y-2Y)", 
-            "desc": "침체 예보관. 0 이하(역전)로 내려가면 1~2년 내 경기 침체가 온다는 강력한 신호입니다.",
+            "desc": "침체 예보관. 0 이하(역전)로 내려가면 침체가 온다는 강력한 신호입니다.",
             "link": "https://fred.stlouisfed.org/series/T10Y2Y"
         },
-        "WALCL": {
-            "name": "연준 총자산 (Money Print)", 
-            "desc": "연준이 찍어낸 돈의 총량. 그래프가 내려가면 시장에서 돈을 회수(긴축)하고 있다는 뜻입니다.",
-            "link": "https://fred.stlouisfed.org/series/WALCL"
+        "BTC-USD": {
+            "name": "비트코인 (Liquidity Proxy)", 
+            "desc": "시장 유동성의 바로미터. 연준이 돈을 풀면 가장 먼저 반응하는 '탄광 속 카나리아'입니다.",
+            "link": "https://finance.yahoo.com/quote/BTC-USD"
         },
-        "RRPONTSYD": {
-            "name": "역래포 잔액 (Liquidity)", 
-            "desc": "시장의 '남는 돈' 저장고. 이 수치가 줄어들면 시중에 유동성이 공급되고 있다는 긍정적 신호입니다.",
-            "link": "https://fred.stlouisfed.org/series/RRPONTSYD"
+        "TLT": {
+            "name": "미 20년물 국채 (TLT)", 
+            "desc": "장기 국채 가격. 금리가 내려갈 것으로 예상되면 이 가격이 오릅니다. (서학개미 최애픽)",
+            "link": "https://finance.yahoo.com/quote/TLT"
         },
-        "T10YIE": {
-            "name": "10년 기대인플레이션", 
-            "desc": "시장이 예상하는 미래 물가. 2%를 크게 상회하면 금리 인하가 어려워집니다.",
-            "link": "https://fred.stlouisfed.org/series/T10YIE"
+        "TIP": {
+            "name": "물가연동채 (Inflation)", 
+            "desc": "물가 상승을 방어하는 채권. 가격이 오르면 시장이 인플레이션을 우려하고 있다는 뜻입니다.",
+            "link": "https://finance.yahoo.com/quote/TIP"
         },
         "HYG": {
-            "name": "하이일드 채권 (Risk On/Off)", 
-            "desc": "부실 기업들의 채권 가격. 그래프가 꺾이면 기업들의 자금난과 경기 하강이 시작됐음을 의미합니다.",
+            "name": "하이일드 채권 (Risk On)", 
+            "desc": "부실 기업들의 채권 가격. 그래프가 꺾이면 기업 자금난과 경기 하강이 시작됐음을 의미합니다.",
             "link": "https://finance.yahoo.com/quote/HYG"
         },
         "DX-Y.NYB": {
@@ -297,7 +309,7 @@ async def macro_data():
         },
         "^VIX": {
             "name": "공포 지수 (CBOE VIX)", 
-            "desc": "투자자들의 불안 지수. 보통 20~30을 넘어가면 시장이 패닉 상태임을 뜻합니다.",
+            "desc": "투자자들의 불안 지수. 20~30을 넘어가면 시장이 패닉 상태임을 뜻합니다.",
             "link": "https://finance.yahoo.com/quote/%5EVIX"
         },
         "GC=F": {
@@ -314,7 +326,7 @@ async def macro_data():
 
     def fetch_indicator(symbol, info):
         try:
-            # 특수 계산 지표 처리
+            # 특수 계산 지표 처리 (장단기 금리차)
             if symbol == "10Y2Y":
                 t10 = yf.Ticker("^TNX").history(period="6mo")
                 t2 = yf.Ticker("^IRX").history(period="6mo")
@@ -327,15 +339,14 @@ async def macro_data():
                         "symbol": symbol, "name": info["name"], "desc": info["desc"],
                         "link": info["link"],
                         "value": round(current, 3), "change": round(current - prev, 3),
-                        "chart_data": chart_data[-120:]
+                        "chart_data": chart_data[-100:]
                     }
+                return None
             
-            # FRED 또는 일반 지표
+            # 일반 지표
             stock = yf.Ticker(symbol)
             hist = stock.history(period="6mo")
-            if hist.empty:
-                # 일부 FRED 지표는 Yahoo에서 종종 누락되므로 일반 대행 지표 사용 로직 필요 (여기서는 yfinance 지원 전제)
-                return None
+            if hist.empty: return None
 
             current, prev = hist['Close'].iloc[-1], hist['Close'].iloc[-2]
             change = ((current - prev) / prev) * 100
@@ -345,7 +356,7 @@ async def macro_data():
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
                 "value": round(current, 2), "change": round(change, 2),
-                "chart_data": chart_data[-120:]
+                "chart_data": chart_data[-100:]
             }
         except: return None
 
@@ -359,7 +370,13 @@ async def macro_data():
     
     # 순서 유지
     ordered = [r for s in target_symbols for r in results if r['symbol'] == s]
-    return {"results": ordered}
+    
+    # 캐시 저장
+    response_data = {"results": ordered}
+    MACRO_CACHE["data"] = response_data
+    MACRO_CACHE["timestamp"] = current_time
+    
+    return response_data
 
 
 @app.get("/api/fwd-per")
