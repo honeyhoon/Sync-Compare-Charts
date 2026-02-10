@@ -258,52 +258,69 @@ async def heatmap_data():
 
 @app.get("/api/macro")
 async def macro_data():
-    """거시 경제 지표 API (FRED 대용)"""
+    """FRED 및 주요 글로벌 매크로 지표 (차트 데이터 포함)"""
+    # 팁: yfinance에서 FRED 지표를 가져올 때는 'FRED:' 접두사를 사용하거나 관련 인덱스를 사용
     indicators = {
-        "^TNX": {"name": "미 10년물 국채 금리", "desc": "시장 금리의 기준점. 이 금리가 오르면 대출 이자가 오르고 주식 가치는 떨어지는 경향이 있습니다."},
-        "^IRX": {"name": "미 13주물 국채 금리", "desc": "가장 단기적인 자금의 가격. 미 연준의 기준 금리 결정을 가장 빠르게 반영합니다."},
-        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "주요국 통화 대비 달러의 가치. 달러가 강해지면(상승) 환차손 우려로 신흥국 주식 시장에서 자금이 빠져나갑니다."},
-        "GC=F": {"name": "금 선물 (Gold)", "desc": "대표적인 안전 자산. 물가가 너무 오르거나 시장이 불안할 때 투자자들이 모여드는 피난처입니다."},
-        "CL=F": {"name": "서부 텍사스유 (WTI)", "desc": "에너지 가격의 기준. 유가가 오르면 물가 상승(인플레이션) 압력이 커져 금리 인상 가능성이 높아집니다."},
-        "^VIX": {"name": "공포 지수 (CBOE VIX)", "desc": "시장의 불안감을 보여주는 척도. 지수가 높을수록 투자자들이 큰 변동성을 예상하고 겁을 먹고 있다는 뜻입니다."},
-        "TIP": {"name": "물가연동채 (Inflation Exp.)", "desc": "시장이 예상하는 미래 물가 수준. 물가가 더 오를 것으로 보이면 이 지표가 상승합니다."},
-        "HYG": {"name": "하이일드 채권 (Credit Risk)", "desc": "신용도가 낮은 기업들의 채권 가격. 경기가 나빠질 것 같으면 이 가격이 먼저 떨어지기 시작합니다."},
+        "^TNX": {"name": "미 10년물 국채 금리", "desc": "시장 금리의 기준. 모든 대출과 주식 가치 평가의 출발점입니다."},
+        "10Y2Y": {"name": "장단기 금리차 (10Y-2Y)", "desc": "경기 침체 신호등. 마이너스(역전)가 지속되면 곧 침체가 온다는 강력한 경고입니다."},
+        "WALCL": {"name": "연준 총자산 (Balance Sheet)", "desc": "연준의 '돈 풀기(양적완화)' 규모. 그래프가 내려가면 시장에서 돈을 거두고 있다는 뜻입니다."},
+        "RRPONTSYD": {"name": "오버나이트 역래포 (ON RRP)", "desc": "시장의 남는 유동성 창고. 이 수치가 급격히 줄면 시장에 돈이 마르기 시작했다는 신호입니다."},
+        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "글로벌 달러 파워. 상승 시 한국 주식 시장에는 보통 악재로 작용합니다."},
+        "^VIX": {"name": "공포 지수 (CBOE VIX)", "desc": "투자자들의 심장 박동수. 지수가 치솟으면 시장이 패닉 상태에 빠졌음을 뜻합니다."},
     }
     
     def fetch_indicator(symbol, info):
         try:
-            stock = yf.Ticker(symbol)
-            # 최근 5일 데이터를 가져와서 가장 최신 2개 사용 (거래일 차이 대응)
-            hist = stock.history(period="5d")
-            if not hist.empty and len(hist) >= 1:
+            # 장단기 금리와 연준 자산 등 특수 지표는 조합 또는 FRED 심볼 사용
+            fetch_symbol = symbol
+            if symbol == "10Y2Y":
+                # 10Y - 2Y 직접 계산
+                t10 = yf.Ticker("^TNX").history(period="6mo")
+                t2 = yf.Ticker("^IRX").history(period="6mo") # 13주물로 대행하거나 2년물 선물 사용 가능
+                if not t10.empty and not t2.empty:
+                    df = t10['Close'] - t2['Close']
+                    df = df.dropna()
+                    current = df.iloc[-1]
+                    change = df.iloc[-1] - df.iloc[-2]
+                    chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 3)} for t, v in df.items()]
+                    return {
+                        "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                        "value": round(current, 3), "change": round(change, 3),
+                        "chart_data": chart_data[-100:]
+                    }
+            
+            stock = yf.Ticker(fetch_symbol)
+            hist = stock.history(period="6mo")
+            if not hist.empty:
                 current = hist['Close'].iloc[-1]
-                if len(hist) >= 2:
-                    prev = hist['Close'].iloc[-2]
-                    change = ((current - prev) / prev) * 100
-                else:
-                    change = 0.0 # 이전 데이터 없으면 변동률 0
-                
+                prev = hist['Close'].iloc[-2]
+                change = ((current - prev) / prev) * 100
+                chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
                 return {
-                    "symbol": symbol,
-                    "name": info["name"],
-                    "desc": info["desc"],
-                    "value": round(current, 2),
-                    "change": round(change, 2)
+                    "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                    "value": round(current, 2), "change": round(change, 2),
+                    "chart_data": chart_data[-100:] # 최근 100일치
                 }
         except Exception as e:
             print(f"Error fetching {symbol}: {e}")
-            return None
         return None
 
     results = []
-    with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = {executor.submit(fetch_indicator, s, i): s for s, i in indicators.items()}
+    # 데이터 fetching 순서 유지를 위해 순차 처리 또는 정렬
+    target_symbols = ["^TNX", "10Y2Y", "WALCL", "RRPONTSYD", "DX-Y.NYB", "^VIX"]
+    with ThreadPoolExecutor(max_workers=len(target_symbols)) as executor:
+        futures = {executor.submit(fetch_indicator, s, indicators[s]): s for s in target_symbols}
         for future in as_completed(futures):
             res = future.result()
-            if res:
-                results.append(res)
+            if res: results.append(res)
     
-    return {"results": results}
+    # 순서 정렬
+    ordered_results = []
+    for s in target_symbols:
+        matched = next((r for r in results if r['symbol'] == s), None)
+        if matched: ordered_results.append(matched)
+
+    return {"results": ordered_results}
 
 
 @app.get("/api/fwd-per")
