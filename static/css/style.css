@@ -1636,9 +1636,17 @@ body {
 
 .mc-mini-chart {
     height: 80px;
-    margin: 10px -10px;
+    margin: 10px -10px 0 -10px;
     pointer-events: none;
-    /* 클릭 방해 금지 */
+}
+
+.mc-chart-dates {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--toss-gray-400);
+    margin-bottom: 12px;
+    padding: 0 2px;
 }
 
 .mc-value {
