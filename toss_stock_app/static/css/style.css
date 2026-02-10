@@ -1631,7 +1631,14 @@ body {
     display: flex;
     align-items: baseline;
     gap: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+}
+
+.mc-mini-chart {
+    height: 80px;
+    margin: 10px -10px;
+    pointer-events: none;
+    /* 클릭 방해 금지 */
 }
 
 .mc-value {
