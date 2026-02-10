@@ -256,6 +256,8 @@ async def heatmap_data():
     return {"results": results}
 
 from datetime import datetime, timedelta
+import requests
+import io
 
 # 전역 캐시 (메모리)
 MACRO_CACHE = {
@@ -273,82 +275,130 @@ async def macro_data():
     if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 21600):
         return MACRO_CACHE["data"]
 
-    # 메르 스타일 핵심 지표 (FRED 원본 심볼)
+    # 메르 스타일 핵심 지표 (FRED 원본 심볼 + 야후 Fallback 심볼)
     indicators = {
         "T10Y2Y": {
             "name": "장단기 금리차 (10Y-2Y)", 
             "desc": "경기 침체 신호등. 0 이하(역전)로 내려갔다가 다시 올라올 때 침체가 시작되는 경향이 있습니다.",
             "link": "https://fred.stlouisfed.org/series/T10Y2Y",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": None
         },
         "T10Y3M": {
             "name": "장단기 금리차 (10Y-3M)", 
             "desc": "연준이 가장 신뢰하는 침체 지표. 이 수치가 마이너스면 연준의 긴축이 과도하다는 뜻입니다.",
             "link": "https://fred.stlouisfed.org/series/T10Y3M",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": None
         },
         "BAMLH0A0HYM2": {
             "name": "하이일드 스프레드 (Risk)", 
             "desc": "기업 부도 위험. 이 그래프가 치솟으면 기업들의 자금줄이 마르고 있다는 강력한 경고입니다.",
             "link": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": "HYG"
         },
         "RRPONTSYD": {
             "name": "역래포 잔액 (Liquidity)", 
             "desc": "시장의 예비 자금. 이 돈이 줄어들면 시장에 유동성이 공급되어 주가 방어에 도움이 됩니다.",
             "link": "https://fred.stlouisfed.org/series/RRPONTSYD",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": "BIL"
         },
         "DFII10": {
             "name": "10년 실질금리 (TIPS)", 
             "desc": "인플레이션을 뺀 진짜 금리. 이 금리가 높으면(플러스) 자산 시장(주식, 부동산)은 하락 압력을 받습니다.",
             "link": "https://fred.stlouisfed.org/series/DFII10",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": "TIP"
         },
         "T10YIE": {
             "name": "기대인플레이션 (BEI)", 
             "desc": "향후 10년 물가 예상치. 연준의 목표(2%)보다 높으면 금리 인하가 지연될 수 있습니다.",
             "link": "https://fred.stlouisfed.org/series/T10YIE",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": None
         },
         "UNRATE": {
             "name": "실업률 (Unemployment)", 
             "desc": "실물 경기 바닥 신호. 실업률이 저점에서 0.5%p 이상 오르면(삼의 법칙) 침체 초기입니다.",
             "link": "https://fred.stlouisfed.org/series/UNRATE",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": None
         },
         "RSAFS": {
             "name": "소매판매 (Retail Sales)", 
             "desc": "미국 경제의 70%인 소비의 힘. 소비가 꺾이면 기업 실적이 나빠지고 경기 침체가 옵니다.",
             "link": "https://fred.stlouisfed.org/series/RSAFS",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": "XRT"
         },
         "WALCL": {
             "name": "연준 총자산 (Fed Balance)", 
             "desc": "연준이 푼 돈의 총량(QT/QE). 그래프가 꺾여 내려가면 시장 유동성이 줄어들고 있다는 뜻입니다.",
             "link": "https://fred.stlouisfed.org/series/WALCL",
-            "source": "FRED"
+            "source": "FRED",
+            "fallback": "BTC-USD"
         },
         "^VIX": {
             "name": "공포 지수 (VIX)", 
             "desc": "투자 심리 지표. 20 이하면 평온, 30 이상이면 패닉 상태입니다.",
-            "link": "https://finance.yahoo.com/quote/%5EVIX"
+            "link": "https://finance.yahoo.com/quote/%5EVIX",
+            "source": "YAHOO",
+            "fallback": None
         },
     }
 
-    def fetch_fred_data(symbol, info):
-        """FRED CSV 직접 다운로드 및 파싱 (최적화: 최근 2년 데이터만 요청)"""
+    def fetch_yahoo_fallback(symbol, info):
+        """FRED 실패 시 야후 파이낸스 대체 지표 수집"""
+        fallback_sym = info.get("fallback")
+        if not fallback_sym: return None # 대체제 없음
+        
         try:
-            # 최근 2년치 데이터만 요청 (속도 향상 핵심)
+            stock = yf.Ticker(fallback_sym)
+            hist = stock.history(period="6mo")
+            if hist.empty: return None
+            
+            current = hist['Close'].iloc[-1]
+            prev = hist['Close'].iloc[-2]
+            change = ((current - prev) / prev) * 100
+            
+            chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
+            
+            return {
+                "symbol": fallback_sym, 
+                "name": info["name"] + " (대체)", 
+                "desc": info["desc"] + " [FRED 접속 실패로 대체 지표]",
+                "link": f"https://finance.yahoo.com/quote/{fallback_sym}",
+                "value": round(current, 2), 
+                "change": round(change, 2),
+                "chart_data": chart_data[-100:]
+            }
+        except: return None
+
+    def fetch_fred_data(symbol, info):
+        """FRED CSV 직접 다운로드 (Requests + Header + Timeout + Fallback)"""
+        try:
+            # 최근 2년치 데이터만 요청 (속도 향상)
             start_date = (datetime.now() - timedelta(days=730)).strftime("%Y-%m-%d")
             url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={symbol}&cosd={start_date}&sort_order=desc"
             
-            # 연준 봇 차단 방지용 헤더
-            storage_options = {'User-Agent': 'Mozilla/5.0'}
+            # 완벽한 브라우저 위장 헤더
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://fred.stlouisfed.org/',
+                'Connection': 'keep-alive'
+            }
             
-            df = pd.read_csv(url, storage_options=storage_options)
+            # 3초 타임아웃 (빠른 실패 유도)
+            response = requests.get(url, headers=headers, timeout=3)
+            response.raise_for_status() 
             
-            # 날짜 정렬 (오름차순)
+            df = pd.read_csv(io.StringIO(response.text))
+            
+            # 날짜 정렬
             df['DATE'] = pd.to_datetime(df['DATE'])
             df = df.sort_values('DATE')
             df = df.set_index('DATE')
@@ -358,24 +408,13 @@ async def macro_data():
             df[symbol] = df[symbol].astype(float)
             
             recent = df.tail(120) 
-            if recent.empty: 
-                print(f"FRED fetch error {symbol}: No recent data")
-                return {
-                    "symbol": symbol, "name": info["name"], "desc": info["desc"],
-                    "link": info["link"],
-                    "value": 0, "change": 0,
-                    "chart_data": [],
-                    "error": True
-                }
+            if recent.empty: raise ValueError("No Data")
 
             current = recent[symbol].iloc[-1]
             prev = recent[symbol].iloc[-2]
             
-            # 변화량 계산 (동일하면 0)
-            if prev != 0:
-                change = ((current - prev) / prev) * 100
-            else:
-                change = 0.0
+            if prev != 0: change = ((current - prev) / prev) * 100
+            else: change = 0.0
 
             chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in recent[symbol].items()]
             
@@ -386,9 +425,11 @@ async def macro_data():
                 "chart_data": chart_data
             }
         except Exception as e:
-            print(f"FRED fetch error {symbol}: {e}")
-            # 실패하더라도 빈 껍데기는 반환하지 않음 (프론트에서 처리 안 함) -> 아예 None 리턴하면 프론트에서 안 보임
-            # 사용자 요청: 안 보이면 안 됨. 에러 상태라도 보내야 함.
+            print(f"FRED fetch failed for {symbol}: {e} -> Trying Fallback")
+            # 실패 시 야후 Fallback 시도 & 실패하면 에러 객체 반환
+            fallback_res = fetch_yahoo_fallback(symbol, info)
+            if fallback_res: return fallback_res
+            
             return {
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
