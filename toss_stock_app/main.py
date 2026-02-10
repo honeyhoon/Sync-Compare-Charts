@@ -9,6 +9,10 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import datetime
+import requests
+import base64
 
 app = FastAPI(title="주식 비교 차트", version="1.0.0")
 
@@ -256,23 +260,29 @@ async def heatmap_data():
 async def macro_data():
     """거시 경제 지표 API (FRED 대용)"""
     indicators = {
-        "^TNX": {"name": "미 10년물 국채 금리", "desc": "시장 금리의 기준점 (상승 시 주가에 부담)"},
-        "^IRX": {"name": "미 13주물 국채 금리", "desc": "단기 자금 흐름의 척도 (기준금리와 밀접)"},
-        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "달러의 가치 (상승 시 신흥국 자금 이탈)"},
-        "GC=F": {"name": "금 선물 (Gold)", "desc": "안전 자산의 상징 (인플레이션 헤지)"},
-        "CL=F": {"name": "서부 텍사스유 (WTI)", "desc": "에너지 가격 (상승 시 물가 상승 압력)"},
-        "^VIX": {"name": "변동성 지수 (VIX)", "desc": "공포 지수 (높을수록 시장 불안)"},
+        "^TNX": {"name": "미 10년물 국채 금리", "desc": "시장 금리의 기준점. 이 금리가 오르면 대출 이자가 오르고 주식 가치는 떨어지는 경향이 있습니다."},
+        "^IRX": {"name": "미 13주물 국채 금리", "desc": "가장 단기적인 자금의 가격. 미 연준의 기준 금리 결정을 가장 빠르게 반영합니다."},
+        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "주요국 통화 대비 달러의 가치. 달러가 강해지면(상승) 환차손 우려로 신흥국 주식 시장에서 자금이 빠져나갑니다."},
+        "GC=F": {"name": "금 선물 (Gold)", "desc": "대표적인 안전 자산. 물가가 너무 오르거나 시장이 불안할 때 투자자들이 모여드는 피난처입니다."},
+        "CL=F": {"name": "서부 텍사스유 (WTI)", "desc": "에너지 가격의 기준. 유가가 오르면 물가 상승(인플레이션) 압력이 커져 금리 인상 가능성이 높아집니다."},
+        "^VIX": {"name": "공포 지수 (CBOE VIX)", "desc": "시장의 불안감을 보여주는 척도. 지수가 높을수록 투자자들이 큰 변동성을 예상하고 겁을 먹고 있다는 뜻입니다."},
+        "TIP": {"name": "물가연동채 (Inflation Exp.)", "desc": "시장이 예상하는 미래 물가 수준. 물가가 더 오를 것으로 보이면 이 지표가 상승합니다."},
+        "HYG": {"name": "하이일드 채권 (Credit Risk)", "desc": "신용도가 낮은 기업들의 채권 가격. 경기가 나빠질 것 같으면 이 가격이 먼저 떨어지기 시작합니다."},
     }
     
     def fetch_indicator(symbol, info):
         try:
             stock = yf.Ticker(symbol)
-            # 지표는 info보다 fast_info나 history가 더 정확할 때가 있음
-            hist = stock.history(period="2d")
-            if not hist.empty:
+            # 최근 5일 데이터를 가져와서 가장 최신 2개 사용 (거래일 차이 대응)
+            hist = stock.history(period="5d")
+            if not hist.empty and len(hist) >= 1:
                 current = hist['Close'].iloc[-1]
-                prev = hist['Close'].iloc[-2]
-                change = ((current - prev) / prev) * 100
+                if len(hist) >= 2:
+                    prev = hist['Close'].iloc[-2]
+                    change = ((current - prev) / prev) * 100
+                else:
+                    change = 0.0 # 이전 데이터 없으면 변동률 0
+                
                 return {
                     "symbol": symbol,
                     "name": info["name"],
@@ -280,7 +290,8 @@ async def macro_data():
                     "value": round(current, 2),
                     "change": round(change, 2)
                 }
-        except:
+        except Exception as e:
+            print(f"Error fetching {symbol}: {e}")
             return None
         return None
 
