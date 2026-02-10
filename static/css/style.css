@@ -1079,53 +1079,57 @@ body {
 
 /* 지표 선택 */
 .metric-section {
-    background: var(--toss-white);
-    padding: 24px;
-    margin: 12px 16px;
-    border-radius: var(--border-radius);
-    box-shadow: var(--card-shadow);
+    background: transparent;
+    padding: 12px 0;
+    margin: 0 16px;
+    box-shadow: none;
+    border-radius: 0;
 }
 
 .metric-label {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--toss-gray-800);
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    display: none;
+    /* 레이블 숨김으로 더 깔끔하게 */
 }
 
 .metric-chips {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 12px;
+    padding: 8px 4px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.metric-chips::-webkit-scrollbar {
+    display: none;
 }
 
 .metric-chip {
-    padding: 12px 20px;
-    border: 1.5px solid var(--toss-gray-100);
-    border-radius: 14px;
+    padding: 10px 20px;
+    border: 1px solid var(--toss-gray-200);
+    border-radius: 50px;
+    /* 알약 형태 */
     background: var(--toss-white);
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 600;
     color: var(--toss-gray-500);
     cursor: pointer;
     font-family: inherit;
     transition: var(--transition);
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .metric-chip:hover {
     border-color: var(--toss-gray-300);
-    color: var(--toss-gray-700);
+    background: var(--toss-gray-50);
 }
 
 .metric-chip.active {
     background: var(--toss-blue);
     color: var(--toss-white);
     border-color: var(--toss-blue);
-    box-shadow: 0 8px 16px rgba(49, 130, 246, 0.2);
-    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(49, 130, 246, 0.3);
 }
 
 /* FWD PER 섹션 */
@@ -1247,22 +1251,38 @@ body {
 }
 
 .per-table thead th {
-    padding: 12px 10px;
-    text-align: left;
+    padding: 14px 12px;
+    text-align: center;
     font-size: 13px;
     font-weight: 700;
-    color: var(--toss-gray-500);
-    border-bottom: 1px solid var(--toss-gray-100);
+    color: var(--toss-white);
+    background: var(--toss-blue);
+    /* 파란색 배경 헤더 */
+    border-bottom: none;
     white-space: nowrap;
+}
+
+/* 첫 번째 헤더(종목명) 스타일 */
+.per-table thead th:first-child {
+    border-top-left-radius: 12px;
+    text-align: left;
+    padding-left: 18px;
+}
+
+/* 마지막 헤더 스타일 */
+.per-table thead th:last-child {
+    border-top-right-radius: 12px;
 }
 
 .per-table tbody tr {
     transition: var(--transition);
+    border-bottom: 1px solid var(--toss-gray-100);
 }
 
 .per-table tbody tr:hover {
-    background: var(--toss-gray-50);
-    transform: scale(1.005);
+    background: var(--toss-blue-light);
+    transform: none;
+    /* 테이블 로우 스케일링은 가독성을 위해 제거 */
 }
 
 .per-table td {
