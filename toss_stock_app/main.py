@@ -260,16 +260,56 @@ async def heatmap_data():
 async def macro_data():
     """FRED 및 주요 글로벌 매크로 지표 (10종 패키지)"""
     indicators = {
-        "^TNX": {"name": "미 10년물 국채 금리", "desc": "경제의 '기준 금리'. 모든 대출과 주식 가치 평가의 출발점입니다."},
-        "10Y2Y": {"name": "장단기 금리차 (10Y-2Y)", "desc": "침체 예보관. 0 이하(역전)로 내려가면 1~2년 내 경기 침체가 온다는 강력한 신호입니다."},
-        "WALCL": {"name": "연준 총자산 (Money Print)", "desc": "연준이 찍어낸 돈의 총량. 그래프가 내려가면 시장에서 돈을 회수(긴축)하고 있다는 뜻입니다."},
-        "RRPONTSYD": {"name": "역래포 잔액 (Liquidity)", "desc": "시장의 '남는 돈' 저장고. 이 수치가 줄어들면 시중에 유동성이 공급되고 있다는 긍정적 신호입니다."},
-        "T10YIE": {"name": "10년 기대인플레이션", "desc": "시장이 예상하는 미래 물가. 2%를 크게 상회하면 금리 인하가 어려워집니다."},
-        "HYG": {"name": "하이일드 채권 (Risk On/Off)", "desc": "부실 기업들의 채권 가격. 그래프가 꺾이면 기업들의 자금난과 경기 하강이 시작됐음을 의미합니다."},
-        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "글로벌 달러 파워. 상승 시 한국 등 신흥국 주식 시장에는 보통 악재로 작용합니다."},
-        "^VIX": {"name": "공포 지수 (CBOE VIX)", "desc": "투자자들의 불안 지수. 보통 20~30을 넘어가면 시장이 패닉 상태임을 뜻합니다."},
-        "GC=F": {"name": "금 선물 (Gold)", "desc": "최종 안전 자산. 화폐 가치가 떨어지거나 전쟁 등 위기 시 가격이 치솟습니다."},
-        "CL=F": {"name": "서부 텍사스유 (WTI)", "desc": "에너지 물가. 유가가 너무 높으면 소비가 위축되고 물가가 올라 경제에 부담을 줍니다."},
+        "^TNX": {
+            "name": "미 10년물 국채 금리", 
+            "desc": "경제의 '기준 금리'. 모든 대출과 주식 가치 평가의 출발점입니다.",
+            "link": "https://finance.yahoo.com/quote/%5ETNX"
+        },
+        "10Y2Y": {
+            "name": "장단기 금리차 (10Y-2Y)", 
+            "desc": "침체 예보관. 0 이하(역전)로 내려가면 1~2년 내 경기 침체가 온다는 강력한 신호입니다.",
+            "link": "https://fred.stlouisfed.org/series/T10Y2Y"
+        },
+        "WALCL": {
+            "name": "연준 총자산 (Money Print)", 
+            "desc": "연준이 찍어낸 돈의 총량. 그래프가 내려가면 시장에서 돈을 회수(긴축)하고 있다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/WALCL"
+        },
+        "RRPONTSYD": {
+            "name": "역래포 잔액 (Liquidity)", 
+            "desc": "시장의 '남는 돈' 저장고. 이 수치가 줄어들면 시중에 유동성이 공급되고 있다는 긍정적 신호입니다.",
+            "link": "https://fred.stlouisfed.org/series/RRPONTSYD"
+        },
+        "T10YIE": {
+            "name": "10년 기대인플레이션", 
+            "desc": "시장이 예상하는 미래 물가. 2%를 크게 상회하면 금리 인하가 어려워집니다.",
+            "link": "https://fred.stlouisfed.org/series/T10YIE"
+        },
+        "HYG": {
+            "name": "하이일드 채권 (Risk On/Off)", 
+            "desc": "부실 기업들의 채권 가격. 그래프가 꺾이면 기업들의 자금난과 경기 하강이 시작됐음을 의미합니다.",
+            "link": "https://finance.yahoo.com/quote/HYG"
+        },
+        "DX-Y.NYB": {
+            "name": "달러 인덱스 (DXY)", 
+            "desc": "글로벌 달러 파워. 상승 시 한국 등 신흥국 주식 시장에는 보통 악재로 작용합니다.",
+            "link": "https://finance.yahoo.com/quote/DX-Y.NYB"
+        },
+        "^VIX": {
+            "name": "공포 지수 (CBOE VIX)", 
+            "desc": "투자자들의 불안 지수. 보통 20~30을 넘어가면 시장이 패닉 상태임을 뜻합니다.",
+            "link": "https://finance.yahoo.com/quote/%5EVIX"
+        },
+        "GC=F": {
+            "name": "금 선물 (Gold)", 
+            "desc": "최종 안전 자산. 화폐 가치가 떨어지거나 전쟁 등 위기 시 가격이 치솟습니다.",
+            "link": "https://finance.yahoo.com/quote/GC=F"
+        },
+        "CL=F": {
+            "name": "서부 텍사스유 (WTI)", 
+            "desc": "에너지 물가. 유가가 너무 높으면 소비가 위축되고 물가가 올라 경제에 부담을 줍니다.",
+            "link": "https://finance.yahoo.com/quote/CL=F"
+        },
     }
 
     def fetch_indicator(symbol, info):
@@ -285,6 +325,7 @@ async def macro_data():
                     chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 3)} for t, v in df.items()]
                     return {
                         "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                        "link": info["link"],
                         "value": round(current, 3), "change": round(current - prev, 3),
                         "chart_data": chart_data[-120:]
                     }
@@ -302,6 +343,7 @@ async def macro_data():
             
             return {
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
                 "value": round(current, 2), "change": round(change, 2),
                 "chart_data": chart_data[-120:]
             }
