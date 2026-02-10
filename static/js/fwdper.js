@@ -6,7 +6,7 @@
 let perData = [];
 let currentSort = 'default';
 let currentMetric = 'overview';
-const perTickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA', '005930.KS', '000660.KS'];
+let perTickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA', '005930.KS', '000660.KS'];
 
 // 티커 → 기업명 매핑
 const perTickerNameMap = {};
