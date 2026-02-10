@@ -271,87 +271,102 @@ async def macro_data():
     if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 3600):
         return MACRO_CACHE["data"]
 
+    # 메르 스타일 핵심 지표 (FRED 원본 심볼)
     indicators = {
-        "^TNX": {
-            "name": "미 10년물 국채 금리", 
-            "desc": "경제의 '기준 금리'. 모든 대출과 주식 가치 평가의 출발점입니다.",
-            "link": "https://finance.yahoo.com/quote/%5ETNX"
-        },
         "T10Y2Y": {
             "name": "장단기 금리차 (10Y-2Y)", 
-            "desc": "침체 예보관. 0 이하(역전)로 내려가면 침체가 온다는 강력한 신호입니다.",
+            "desc": "경기 침체 신호등. 0 이하(역전)로 내려갔다가 다시 올라올 때 침체가 시작되는 경향이 있습니다.",
             "link": "https://fred.stlouisfed.org/series/T10Y2Y",
             "source": "FRED"
         },
-        "WALCL": {
-            "name": "연준 총자산 (Balance Sheet)", 
-            "desc": "연준이 찍어낸 돈의 총량. 그래프가 내려가면 시장에서 돈을 회수(긴축)하고 있다는 뜻입니다.",
-            "link": "https://fred.stlouisfed.org/series/WALCL",
-            "source": "FRED"
-        },
-        "RRPONTSYD": {
-            "name": "역래포 잔액 (Liquidity)", 
-            "desc": "시장의 '남는 돈' 저장고. 이 수치가 줄어들면 시중에 유동성이 공급되고 있다는 긍정적 신호입니다.",
-            "link": "https://fred.stlouisfed.org/series/RRPONTSYD",
-            "source": "FRED"
-        },
-        "T10YIE": {
-            "name": "10년 기대인플레이션", 
-            "desc": "시장이 예상하는 미래 물가. 2%를 크게 상회하면 금리 인하가 어려워집니다.",
-            "link": "https://fred.stlouisfed.org/series/T10YIE",
+        "T10Y3M": {
+            "name": "장단기 금리차 (10Y-3M)", 
+            "desc": "연준이 가장 신뢰하는 침체 지표. 이 수치가 마이너스면 연준의 긴축이 과도하다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/T10Y3M",
             "source": "FRED"
         },
         "BAMLH0A0HYM2": {
             "name": "하이일드 스프레드 (Risk)", 
-            "desc": "부도 위험 지표. 그래프가 치솟으면 기업들이 자금을 구하기 어려워져 위기가 옵니다.",
+            "desc": "기업 부도 위험. 이 그래프가 치솟으면 기업들의 자금줄이 마르고 있다는 강력한 경고입니다.",
             "link": "https://fred.stlouisfed.org/series/BAMLH0A0HYM2",
             "source": "FRED"
         },
-        "DX-Y.NYB": {
-            "name": "달러 인덱스 (DXY)", 
-            "desc": "글로벌 달러 파워. 상승 시 한국 등 신흥국 주식 시장에는 보통 악재로 작용합니다.",
-            "link": "https://finance.yahoo.com/quote/DX-Y.NYB"
+        "RRPONTSYD": {
+            "name": "역래포 잔액 (Liquidity)", 
+            "desc": "시장의 예비 자금. 이 돈이 줄어들면 시장에 유동성이 공급되어 주가 방어에 도움이 됩니다.",
+            "link": "https://fred.stlouisfed.org/series/RRPONTSYD",
+            "source": "FRED"
+        },
+        "DFII10": {
+            "name": "10년 실질금리 (TIPS)", 
+            "desc": "인플레이션을 뺀 진짜 금리. 이 금리가 높으면(플러스) 자산 시장(주식, 부동산)은 하락 압력을 받습니다.",
+            "link": "https://fred.stlouisfed.org/series/DFII10",
+            "source": "FRED"
+        },
+        "T10YIE": {
+            "name": "기대인플레이션 (BEI)", 
+            "desc": "향후 10년 물가 예상치. 연준의 목표(2%)보다 높으면 금리 인하가 지연될 수 있습니다.",
+            "link": "https://fred.stlouisfed.org/series/T10YIE",
+            "source": "FRED"
+        },
+        "UNRATE": {
+            "name": "실업률 (Unemployment)", 
+            "desc": "실물 경기 바닥 신호. 실업률이 저점에서 0.5%p 이상 오르면(삼의 법칙) 침체 초기입니다.",
+            "link": "https://fred.stlouisfed.org/series/UNRATE",
+            "source": "FRED"
+        },
+        "RSAFS": {
+            "name": "소매판매 (Retail Sales)", 
+            "desc": "미국 경제의 70%인 소비의 힘. 소비가 꺾이면 기업 실적이 나빠지고 경기 침체가 옵니다.",
+            "link": "https://fred.stlouisfed.org/series/RSAFS",
+            "source": "FRED"
+        },
+        "WALCL": {
+            "name": "연준 총자산 (Fed Balance)", 
+            "desc": "연준이 푼 돈의 총량(QT/QE). 그래프가 꺾여 내려가면 시장 유동성이 줄어들고 있다는 뜻입니다.",
+            "link": "https://fred.stlouisfed.org/series/WALCL",
+            "source": "FRED"
         },
         "^VIX": {
-            "name": "공포 지수 (CBOE VIX)", 
-            "desc": "투자자들의 불안 지수. 20~30을 넘어가면 시장이 패닉 상태임을 뜻합니다.",
+            "name": "공포 지수 (VIX)", 
+            "desc": "투자 심리 지표. 20 이하면 평온, 30 이상이면 패닉 상태입니다.",
             "link": "https://finance.yahoo.com/quote/%5EVIX"
-        },
-        "GC=F": {
-            "name": "금 선물 (Gold)", 
-            "desc": "최종 안전 자산. 화폐 가치가 떨어지거나 전쟁 등 위기 시 가격이 치솟습니다.",
-            "link": "https://finance.yahoo.com/quote/GC=F"
-        },
-        "CL=F": {
-            "name": "서부 텍사스유 (WTI)", 
-            "desc": "에너지 물가. 유가가 너무 높으면 소비가 위축되고 물가가 올라 경제에 부담을 줍니다.",
-            "link": "https://finance.yahoo.com/quote/CL=F"
         },
     }
 
     def fetch_fred_data(symbol, info):
-        """FRED CSV 직접 다운로드 및 파싱"""
+        """FRED CSV 직접 다운로드 및 파싱 (User-Agent 추가)"""
         try:
             url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={symbol}&sort_order=desc"
-            df = pd.read_csv(url)
+            # 연준 봇 차단 방지용 헤더
+            storage_options = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
             
-            # 날짜 정렬 (오름차순) 및 최근 1년 데이터 확보
+            df = pd.read_csv(url, storage_options=storage_options)
+            
+            # 날짜 정렬 (오름차순)
             df['DATE'] = pd.to_datetime(df['DATE'])
             df = df.sort_values('DATE')
             df = df.set_index('DATE')
             
-            # '.' 등의 결측치 처리 (FRED는 휴장일 등을 .으로 표시함)
+            # 결측치 처리
             df = df[pd.to_numeric(df[symbol], errors='coerce').notnull()]
             df[symbol] = df[symbol].astype(float)
             
-            recent = df.tail(120) # 최근 120일 (약 6개월)
-            if recent.empty: return None
+            recent = df.tail(120) 
+            if recent.empty: 
+                print(f"FRED fetch error {symbol}: No recent data")
+                return {
+                    "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                    "link": info["link"],
+                    "value": 0, "change": 0,
+                    "chart_data": [],
+                    "error": True
+                }
 
             current = recent[symbol].iloc[-1]
             prev = recent[symbol].iloc[-2]
             
-            # 금리나 인덱스 등은 단순 차이보다는 등락률이 중요하나, 스프레드/금리는 bp 단위 변화가 중요할 수도 있음.
-            # 통일성을 위해 여기서는 퍼센트 변화율(%)로 계산 (단, 0일 경우 제외)
+            # 변화량 계산 (동일하면 0)
             if prev != 0:
                 change = ((current - prev) / prev) * 100
             else:
@@ -367,18 +382,32 @@ async def macro_data():
             }
         except Exception as e:
             print(f"FRED fetch error {symbol}: {e}")
-            return None
+            # 실패하더라도 빈 껍데기는 반환하지 않음 (프론트에서 처리 안 함) -> 아예 None 리턴하면 프론트에서 안 보임
+            # 사용자 요청: 안 보이면 안 됨. 에러 상태라도 보내야 함.
+            return {
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
+                "value": 0, "change": 0,
+                "chart_data": [],
+                "error": True
+            }
 
     def fetch_indicator(symbol, info):
         try:
-            # FRED 소스인 경우 별도 처리
             if info.get("source") == "FRED":
                 return fetch_fred_data(symbol, info)
 
-            # Yahoo Finance 일반 지표
             stock = yf.Ticker(symbol)
             hist = stock.history(period="6mo")
-            if hist.empty: return None
+            if hist.empty: 
+                print(f"Yahoo Finance fetch error {symbol}: No historical data")
+                return {
+                    "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                    "link": info["link"],
+                    "value": 0, "change": 0,
+                    "chart_data": [],
+                    "error": True
+                }
 
             current, prev = hist['Close'].iloc[-1], hist['Close'].iloc[-2]
             change = ((current - prev) / prev) * 100
@@ -390,8 +419,16 @@ async def macro_data():
                 "value": round(current, 2), "change": round(change, 2),
                 "chart_data": chart_data[-100:]
             }
-        except: return None
-
+        except Exception as e:
+            print(f"Yahoo Finance fetch error {symbol}: {e}")
+            return {
+                "symbol": symbol, "name": info["name"], "desc": info["desc"],
+                "link": info["link"],
+                "value": 0, "change": 0,
+                "chart_data": [],
+                "error": True
+            }
+    
     target_symbols = list(indicators.keys())
     results = []
     with ThreadPoolExecutor(max_workers=len(target_symbols)) as executor:
