@@ -252,6 +252,49 @@ async def heatmap_data():
     return {"results": results}
 
 
+@app.get("/api/macro")
+async def macro_data():
+    """거시 경제 지표 API (FRED 대용)"""
+    indicators = {
+        "^TNX": {"name": "미 10년물 국채 금리", "desc": "시장 금리의 기준점 (상승 시 주가에 부담)"},
+        "^IRX": {"name": "미 13주물 국채 금리", "desc": "단기 자금 흐름의 척도 (기준금리와 밀접)"},
+        "DX-Y.NYB": {"name": "달러 인덱스 (DXY)", "desc": "달러의 가치 (상승 시 신흥국 자금 이탈)"},
+        "GC=F": {"name": "금 선물 (Gold)", "desc": "안전 자산의 상징 (인플레이션 헤지)"},
+        "CL=F": {"name": "서부 텍사스유 (WTI)", "desc": "에너지 가격 (상승 시 물가 상승 압력)"},
+        "^VIX": {"name": "변동성 지수 (VIX)", "desc": "공포 지수 (높을수록 시장 불안)"},
+    }
+    
+    def fetch_indicator(symbol, info):
+        try:
+            stock = yf.Ticker(symbol)
+            # 지표는 info보다 fast_info나 history가 더 정확할 때가 있음
+            hist = stock.history(period="2d")
+            if not hist.empty:
+                current = hist['Close'].iloc[-1]
+                prev = hist['Close'].iloc[-2]
+                change = ((current - prev) / prev) * 100
+                return {
+                    "symbol": symbol,
+                    "name": info["name"],
+                    "desc": info["desc"],
+                    "value": round(current, 2),
+                    "change": round(change, 2)
+                }
+        except:
+            return None
+        return None
+
+    results = []
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(fetch_indicator, s, i): s for s, i in indicators.items()}
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                results.append(res)
+    
+    return {"results": results}
+
+
 @app.get("/api/fwd-per")
 @app.get("/api/valuation")
 async def valuation_data(tickers: str):
