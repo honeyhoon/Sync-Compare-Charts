@@ -366,6 +366,7 @@ async def macro_data():
             chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
             
             return {
+                "original_symbol": symbol, # 정렬용 원본 키
                 "symbol": fallback_sym, 
                 "name": info["name"] + " (대체)", 
                 "desc": info["desc"] + " [FRED 접속 실패로 대체 지표]",
@@ -419,6 +420,7 @@ async def macro_data():
             chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in recent[symbol].items()]
             
             return {
+                "original_symbol": symbol, # 정렬용 원본 키
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
                 "value": round(current, 2), "change": round(change, 2),
@@ -431,6 +433,7 @@ async def macro_data():
             if fallback_res: return fallback_res
             
             return {
+                "original_symbol": symbol,
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
                 "value": 0, "change": 0,
@@ -448,6 +451,7 @@ async def macro_data():
             if hist.empty: 
                 print(f"Yahoo Finance fetch error {symbol}: No historical data")
                 return {
+                    "original_symbol": symbol,
                     "symbol": symbol, "name": info["name"], "desc": info["desc"],
                     "link": info["link"],
                     "value": 0, "change": 0,
@@ -460,6 +464,7 @@ async def macro_data():
             chart_data = [{"time": t.strftime("%Y-%m-%d"), "value": round(v, 2)} for t, v in hist['Close'].items()]
             
             return {
+                "original_symbol": symbol, # 정렬용 원본 키
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
                 "value": round(current, 2), "change": round(change, 2),
@@ -468,6 +473,7 @@ async def macro_data():
         except Exception as e:
             print(f"Yahoo Finance fetch error {symbol}: {e}")
             return {
+                "original_symbol": symbol,
                 "symbol": symbol, "name": info["name"], "desc": info["desc"],
                 "link": info["link"],
                 "value": 0, "change": 0,
@@ -484,7 +490,7 @@ async def macro_data():
             if res: results.append(res)
     
     # 순서 유지
-    ordered = [r for s in target_symbols for r in results if r['symbol'] == s]
+    ordered = [r for s in target_symbols for r in results if r.get('original_symbol') == s]
     
     # 캐시 저장
     response_data = {"results": ordered}
