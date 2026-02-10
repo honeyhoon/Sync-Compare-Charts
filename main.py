@@ -313,7 +313,14 @@ async def valuation_data(tickers: str):
                 ordered.append(r)
                 break
     
-    return {"stocks": ordered}
+    import datetime
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    return {
+        "stocks": ordered,
+        "timestamp": now,
+        "source": "Yahoo Finance"
+    }
 
 
 if __name__ == "__main__":
