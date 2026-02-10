@@ -1594,7 +1594,10 @@ body {
     border-radius: 20px;
     padding: 20px;
     transition: var(--transition);
-    cursor: default;
+    cursor: pointer;
+    /* 클릭 커서 강제 */
+    position: relative;
+    /* z-index 맥락 생성 */
 }
 
 .macro-card:hover {
