@@ -94,7 +94,14 @@ async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, e
             print(f"Error: {ticker} - {e}")
             continue
     
-    return {"stocks": results}
+    import datetime
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    return {
+        "stocks": results,
+        "timestamp": now,
+        "source": "Yahoo Finance"
+    }
 
 
 @app.get("/api/popular")
@@ -118,300 +125,197 @@ async def popular():
     }
 
 
-@app.get("/api/heatmap")
-async def heatmap_data(tickers: str, period: str = "1d"):
-    """히트맵 데이터 API - 종목별 변동률"""
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+# 종목 검색용 데이터베이스
+STOCK_DATABASE = [
+    # 한국 주요 종목
+    {"symbol": "005930.KS", "name": "삼성전자", "keywords": "samsung electronics 삼전"},
+    {"symbol": "000660.KS", "name": "SK하이닉스", "keywords": "sk hynix 하이닉스"},
+    {"symbol": "035420.KS", "name": "NAVER", "keywords": "네이버 naver"},
+    {"symbol": "035720.KS", "name": "카카오", "keywords": "kakao"},
+    {"symbol": "006400.KS", "name": "삼성SDI", "keywords": "samsung sdi 삼성에스디아이"},
+    {"symbol": "051910.KS", "name": "LG화학", "keywords": "lg chem 엘지화학"},
+    {"symbol": "373220.KS", "name": "LG에너지솔루션", "keywords": "lg energy solution 엘지에너지"},
+    {"symbol": "005380.KS", "name": "현대차", "keywords": "hyundai motor 현대자동차"},
+    {"symbol": "000270.KS", "name": "기아", "keywords": "kia 기아차"},
+    {"symbol": "068270.KS", "name": "셀트리온", "keywords": "celltrion"},
+    {"symbol": "207940.KS", "name": "삼성바이오로직스", "keywords": "samsung biologics 삼바"},
+    {"symbol": "003670.KS", "name": "포스코퓨처엠", "keywords": "posco future m 포스코"},
+    {"symbol": "028260.KS", "name": "삼성물산", "keywords": "samsung c&t 삼성건설"},
+    {"symbol": "018260.KS", "name": "삼성에스디에스", "keywords": "samsung sds 삼성SDS"},
+    {"symbol": "009150.KS", "name": "삼성전기", "keywords": "samsung electro-mechanics"},
+    {"symbol": "066570.KS", "name": "LG전자", "keywords": "lg electronics 엘지전자"},
+    {"symbol": "003550.KS", "name": "LG", "keywords": "lg corp 엘지"},
+    {"symbol": "105560.KS", "name": "KB금융", "keywords": "kb financial 국민은행"},
+    {"symbol": "055550.KS", "name": "신한지주", "keywords": "shinhan 신한은행"},
+    {"symbol": "086790.KS", "name": "하나금융지주", "keywords": "hana financial 하나은행"},
+    # 미국 주요 종목
+    {"symbol": "AAPL", "name": "Apple", "keywords": "애플 아이폰 iphone"},
+    {"symbol": "MSFT", "name": "Microsoft", "keywords": "마이크로소프트 윈도우"},
+    {"symbol": "GOOGL", "name": "Alphabet (Google)", "keywords": "구글 알파벳 youtube"},
+    {"symbol": "AMZN", "name": "Amazon", "keywords": "아마존 aws"},
+    {"symbol": "NVDA", "name": "NVIDIA", "keywords": "엔비디아 GPU 그래픽"},
+    {"symbol": "META", "name": "Meta (Facebook)", "keywords": "메타 페이스북 인스타그램"},
+    {"symbol": "TSLA", "name": "Tesla", "keywords": "테슬라 전기차"},
+    {"symbol": "AMD", "name": "AMD", "keywords": "에이엠디 라이젠"},
+    {"symbol": "INTC", "name": "Intel", "keywords": "인텔 cpu"},
+    {"symbol": "NFLX", "name": "Netflix", "keywords": "넷플릭스"},
+    {"symbol": "DIS", "name": "Disney", "keywords": "디즈니"},
+    {"symbol": "JPM", "name": "JPMorgan Chase", "keywords": "제이피모건"},
+    {"symbol": "V", "name": "Visa", "keywords": "비자"},
+    {"symbol": "MA", "name": "Mastercard", "keywords": "마스터카드"},
+    {"symbol": "BAC", "name": "Bank of America", "keywords": "뱅크오브아메리카"},
+    {"symbol": "GS", "name": "Goldman Sachs", "keywords": "골드만삭스"},
+    {"symbol": "UNH", "name": "UnitedHealth", "keywords": "유나이티드헬스"},
+    {"symbol": "JNJ", "name": "Johnson & Johnson", "keywords": "존슨앤존슨"},
+    {"symbol": "PFE", "name": "Pfizer", "keywords": "화이자"},
+    {"symbol": "LLY", "name": "Eli Lilly", "keywords": "일라이릴리"},
+    {"symbol": "XOM", "name": "ExxonMobil", "keywords": "엑슨모빌"},
+    {"symbol": "CVX", "name": "Chevron", "keywords": "쉐브론"},
+    {"symbol": "KO", "name": "Coca-Cola", "keywords": "코카콜라"},
+    {"symbol": "PEP", "name": "PepsiCo", "keywords": "펩시콜라"},
+    {"symbol": "MCD", "name": "McDonald's", "keywords": "맥도날드"},
+    {"symbol": "SBUX", "name": "Starbucks", "keywords": "스타벅스"},
+    {"symbol": "NKE", "name": "Nike", "keywords": "나이키"},
+    {"symbol": "BA", "name": "Boeing", "keywords": "보잉"},
+    {"symbol": "CAT", "name": "Caterpillar", "keywords": "캐터필러"},
+    # ETF
+    {"symbol": "SPY", "name": "S&P 500 ETF", "keywords": "sp500 에스피"},
+    {"symbol": "QQQ", "name": "Nasdaq 100 ETF", "keywords": "나스닥 큐큐큐"},
+    {"symbol": "GLD", "name": "Gold ETF", "keywords": "금 골드"},
+    {"symbol": "SLV", "name": "Silver ETF", "keywords": "은 실버"},
+    {"symbol": "USO", "name": "Oil ETF", "keywords": "원유 오일"},
+]
+
+
+@app.get("/api/search")
+async def search_ticker(q: str):
+    """종목 검색 API"""
+    if not q or len(q) < 1:
+        return {"results": []}
     
-    if not ticker_list:
-        return {"stocks": []}
-    
-    # 기간 매핑 (1일은 5일 데이터를 가져와서 마지막 2일 비교)
-    period_map = {
-        "1d": "5d",   # 1일 변동은 5일치 데이터에서 마지막 2일 비교
-        "1w": "1mo",  # 1주 변동
-        "1mo": "3mo", # 1개월 변동
-        "3mo": "6mo"  # 3개월 변동
-    }
-    yf_period = period_map.get(period, "5d")
-    
+    query = q.lower()
     results = []
     
-    for ticker in ticker_list[:50]:  # 최대 50개
-        try:
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=yf_period)
-            
-            if df.empty or len(df) < 2:
-                continue
-            
-            # 기간에 따른 변동률 계산
-            if period == "1d":
-                # 1일: 전일 종가 vs 오늘 종가
-                prev_close = df["Close"].iloc[-2]
-                last_close = df["Close"].iloc[-1]
-            else:
-                # 다른 기간: 첫날 vs 마지막날
-                days_map = {"1w": 5, "1mo": 21, "3mo": 63}
-                days = days_map.get(period, 5)
-                idx = min(days, len(df) - 1)
-                prev_close = df["Close"].iloc[-idx-1] if len(df) > idx else df["Close"].iloc[0]
-                last_close = df["Close"].iloc[-1]
-            
-            change = ((last_close - prev_close) / prev_close) * 100
-            
+    for stock in STOCK_DATABASE:
+        # 심볼, 이름, 키워드에서 검색
+        if (query in stock["symbol"].lower() or 
+            query in stock["name"].lower() or 
+            query in stock.get("keywords", "").lower()):
             results.append({
-                "ticker": ticker,
-                "price": round(last_close, 2),
-                "change": round(change, 2)
+                "symbol": stock["symbol"],
+                "name": stock["name"]
             })
-            
-        except Exception as e:
-            print(f"Heatmap Error: {ticker} - {e}")
-            continue
     
-    return {"stocks": results}
+    return {"results": results[:10]}  # 최대 10개
 
 
-@app.get("/api/heatmap-full")
-async def heatmap_full_data(tickers: str, period: str = "1d"):
-    """Finviz 스타일 히트맵 - 병렬 처리로 빠른 로딩"""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    
-    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+@app.get("/api/fwd-per")
+@app.get("/api/valuation")
+async def valuation_data(tickers: str):
+    """밸류에이션 데이터 API - PER, PBR, PSR, EV/EBITDA, 배당수익률, ROE"""
+    ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
     
     if not ticker_list:
         return {"stocks": []}
     
-    # 기간 매핑
-    period_map = {
-        "1d": "5d",
-        "1w": "1mo",
-        "1mo": "3mo",
-        "3mo": "6mo"
-    }
-    yf_period = period_map.get(period, "5d")
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     
-    def fetch_stock_data(ticker):
-        """개별 종목 데이터 가져오기"""
+    def fetch_valuation(ticker):
+        """개별 종목 밸류에이션 데이터 가져오기"""
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
-            df = stock.history(period=yf_period)
             
-            if df.empty or len(df) < 2:
-                return None
-            
-            # 변동률 계산
-            if period == "1d":
-                prev_close = df["Close"].iloc[-2]
-                last_close = df["Close"].iloc[-1]
-            else:
-                days_map = {"1w": 5, "1mo": 21, "3mo": 63}
-                days = days_map.get(period, 5)
-                idx = min(days, len(df) - 1)
-                prev_close = df["Close"].iloc[-idx-1] if len(df) > idx else df["Close"].iloc[0]
-                last_close = df["Close"].iloc[-1]
-            
-            change = ((last_close - prev_close) / prev_close) * 100
-            
-            # 시가총액, P/E, Forward P/E 가져오기
+            name = info.get("shortName") or info.get("longName") or ticker
+            price = info.get("currentPrice") or info.get("regularMarketPrice", 0)
             market_cap = info.get("marketCap", 0)
-            pe_ratio = info.get("trailingPE")
-            fwd_pe_ratio = info.get("forwardPE")
+            sector = info.get("sector", "")
+            
+            # PER
+            trailing_pe = info.get("trailingPE")
+            forward_pe = info.get("forwardPE")
+            trailing_eps = info.get("trailingEps")
+            forward_eps = info.get("forwardEps")
+            
+            # PBR (Price to Book)
+            pbr = info.get("priceToBook")
+            book_value = info.get("bookValue")
+            
+            # PSR (Price to Sales)
+            psr = info.get("priceToSalesTrailing12Months")
+            revenue_per_share = info.get("revenuePerShare")
+            
+            # EV/EBITDA
+            ev = info.get("enterpriseValue")
+            ebitda = info.get("ebitda")
+            ev_ebitda = None
+            if ev and ebitda and ebitda > 0:
+                ev_ebitda = ev / ebitda
+            
+            # 배당수익률
+            dividend_yield = info.get("dividendYield")
+            # yfinance info의 dividendYield는 이미 퍼센트 단위(0.34 = 0.34%)인 경우가 많음
+            # 단, trailingAnnualDividendYield 등은 소수점(0.0034)인 경우가 있어 혼동 주의
+            # 여기서는 API가 제공하는 원시값을 그대로 사용하여 정교함을 유지함
+            
+            # ROE
+            roe = info.get("returnOnEquity")
+            if roe is not None:
+                roe = roe * 100 # ROE는 소수점 단위(0.15 = 15%)로 제공됨
+            
+            # 영업이익률
+            operating_margin = info.get("operatingMargins")
+            if operating_margin is not None:
+                operating_margin = operating_margin * 100 # 소수점 단위 (0.21 = 21%)
             
             return {
                 "ticker": ticker,
-                "price": round(last_close, 2),
-                "change": round(change, 2),
+                "name": name,
+                "price": round(price, 2) if price else 0,
                 "marketCap": market_cap,
-                "pe": round(pe_ratio, 2) if pe_ratio else None,
-                "fwdPe": round(fwd_pe_ratio, 2) if fwd_pe_ratio else None
+                "sector": sector,
+                # PER
+                "trailingPE": round(trailing_pe, 2) if trailing_pe else None,
+                "forwardPE": round(forward_pe, 2) if forward_pe else None,
+                "trailingEPS": round(trailing_eps, 2) if trailing_eps else None,
+                "forwardEPS": round(forward_eps, 2) if forward_eps else None,
+                # PBR
+                "pbr": round(pbr, 2) if pbr else None,
+                "bookValue": round(book_value, 2) if book_value else None,
+                # PSR
+                "psr": round(psr, 2) if psr else None,
+                # EV/EBITDA
+                "evEbitda": round(ev_ebitda, 2) if ev_ebitda else None,
+                # 배당
+                "dividendYield": round(dividend_yield, 2) if dividend_yield else None,
+                # 수익성
+                "roe": round(roe, 2) if roe else None,
+                "operatingMargin": round(operating_margin, 2) if operating_margin else None,
             }
-            
         except Exception as e:
-            print(f"Heatmap Error: {ticker} - {e}")
+            print(f"Valuation Error: {ticker} - {e}")
             return None
     
-    # 병렬 처리 (최대 20개 스레드)
+    # 병렬 처리 (최대 10개)
     results = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        futures = {executor.submit(fetch_stock_data, ticker): ticker for ticker in ticker_list[:160]}
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_valuation, t): t for t in ticker_list[:20]}
         for future in as_completed(futures):
             result = future.result()
             if result:
                 results.append(result)
     
-    return {"stocks": results}
-
-
-# S&P 500 섹터별 종목 (전체)
-SECTOR_STOCKS = {
-    'Technology': [
-        'AAPL', 'MSFT', 'NVDA', 'AVGO', 'ORCL', 'CRM', 'ADBE', 'AMD', 'INTC', 'CSCO',
-        'IBM', 'QCOM', 'TXN', 'NOW', 'INTU', 'AMAT', 'MU', 'LRCX', 'KLAC', 'SNPS',
-        'CDNS', 'ADSK', 'ADI', 'FTNT', 'PANW', 'ANSS', 'MPWR', 'KEYS', 'NXPI', 'MCHP',
-        'ON', 'FSLR', 'HPQ', 'HPE', 'WDC', 'STX', 'NTAP', 'JNPR', 'AKAM', 'ZBRA',
-        'EPAM', 'IT', 'CTSH', 'GDDY', 'GEN', 'FFIV', 'SWKS', 'QRVO', 'TER', 'ENPH'
-    ],
-    'Communication': [
-        'GOOGL', 'GOOG', 'META', 'NFLX', 'DIS', 'CMCSA', 'VZ', 'T', 'TMUS', 'CHTR',
-        'EA', 'WBD', 'PARA', 'FOXA', 'FOX', 'OMC', 'IPG', 'TTWO', 'LYV', 'MTCH',
-        'NWS', 'NWSA', 'DISH'
-    ],
-    'Consumer Cyclical': [
-        'AMZN', 'TSLA', 'HD', 'MCD', 'NKE', 'SBUX', 'LOW', 'TJX', 'BKNG', 'CMG',
-        'ORLY', 'AZO', 'ROST', 'MAR', 'HLT', 'DHI', 'LEN', 'PHM', 'NVR', 'GM',
-        'F', 'APTV', 'EBAY', 'ETSY', 'DPZ', 'YUM', 'DARDEN', 'POOL', 'BBY', 'ULTA',
-        'LVS', 'WYNN', 'MGM', 'CZR', 'RCL', 'CCL', 'NCLH', 'EXPE', 'GRMN', 'BWA',
-        'RL', 'TPR', 'PVH', 'VFC', 'HAS', 'LEG', 'MHK', 'WHR'
-    ],
-    'Financial': [
-        'BRK-B', 'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'AXP', 'BLK',
-        'C', 'SCHW', 'CB', 'PGR', 'MMC', 'ICE', 'CME', 'AON', 'MET', 'AIG',
-        'TRV', 'PNC', 'USB', 'TFC', 'AMP', 'SPGI', 'MCO', 'MSCI', 'FIS', 'FISV',
-        'COF', 'BK', 'STT', 'NTRS', 'FITB', 'KEY', 'RF', 'CFG', 'HBAN', 'ZION',
-        'MTB', 'CINF', 'L', 'ALL', 'AFL', 'PRU', 'LNC', 'GL', 'AIZ', 'BRO',
-        'WRB', 'RE', 'HIG', 'CNA', 'ALLY', 'SYF', 'DFS', 'NDAQ', 'CBOE', 'IVZ'
-    ],
-    'Healthcare': [
-        'UNH', 'LLY', 'JNJ', 'ABBV', 'MRK', 'PFE', 'TMO', 'ABT', 'DHR', 'BMY',
-        'AMGN', 'MDT', 'CVS', 'ELV', 'ISRG', 'GILD', 'VRTX', 'SYK', 'HCA', 'CI',
-        'ZTS', 'BDX', 'BSX', 'REGN', 'MCK', 'COR', 'EW', 'IQV', 'IDXX', 'HUM',
-        'DXCM', 'A', 'MTD', 'BAX', 'WST', 'CAH', 'RMD', 'HOLX', 'TFX', 'DGX',
-        'VTRS', 'MOH', 'CNC', 'ALGN', 'COO', 'TECH', 'LH', 'PKI', 'BIO', 'HSIC',
-        'XRAY', 'CTLT', 'OGN', 'INCY', 'BIIB'
-    ],
-    'Industrials': [
-        'GE', 'CAT', 'RTX', 'HON', 'UNP', 'BA', 'UPS', 'DE', 'LMT', 'MMM',
-        'ETN', 'ADP', 'ITW', 'WM', 'EMR', 'GD', 'CSX', 'NSC', 'PH', 'TT',
-        'NOC', 'CTAS', 'JCI', 'PCAR', 'CARR', 'OTIS', 'ROK', 'CMI', 'FDX', 'TDG',
-        'FAST', 'AME', 'LHX', 'GWW', 'VRSK', 'IR', 'PWR', 'XYL', 'DOV', 'WAB',
-        'SWK', 'IEX', 'HUBB', 'CSGP', 'LDOS', 'J', 'BAH', 'CPRT', 'EXPD', 'UAL',
-        'DAL', 'LUV', 'ALK', 'AAL', 'CHRW', 'JBHT', 'ODFL', 'GNRC', 'MAS', 'ALLE'
-    ],
-    'Consumer Defensive': [
-        'PG', 'KO', 'PEP', 'COST', 'WMT', 'PM', 'MO', 'CL', 'MDLZ', 'KHC',
-        'EL', 'STZ', 'GIS', 'SYY', 'KMB', 'K', 'HSY', 'KR', 'CLX', 'TAP',
-        'TSN', 'CAG', 'ADM', 'BG', 'SJM', 'MKC', 'CPB', 'HRL', 'CHD', 'WBA',
-        'DG', 'DLTR', 'TGT'
-    ],
-    'Energy': [
-        'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY', 'HAL',
-        'DVN', 'PXD', 'HES', 'WMB', 'KMI', 'OKE', 'FANG', 'BKR', 'TRGP', 'CTRA',
-        'MRO', 'APA', 'EQT'
-    ],
-    'Real Estate': [
-        'PLD', 'AMT', 'EQIX', 'CCI', 'PSA', 'SPG', 'WELL', 'DLR', 'O', 'AVB',
-        'EQR', 'ARE', 'ESS', 'MAA', 'UDR', 'VTR', 'WY', 'SBAC', 'EXR', 'INVH',
-        'VICI', 'IRM', 'KIM', 'REG', 'CPT', 'HST', 'BXP', 'PEAK', 'SLG', 'FRT'
-    ],
-    'Utilities': [
-        'NEE', 'DUK', 'SO', 'D', 'AEP', 'SRE', 'EXC', 'XEL', 'WEC', 'ES',
-        'ED', 'AWK', 'EIX', 'DTE', 'ETR', 'FE', 'PCG', 'AEE', 'LNT', 'CMS',
-        'CNP', 'NI', 'PNW', 'ATO', 'EVRG', 'NRG', 'PPL'
-    ],
-    'Materials': [
-        'LIN', 'APD', 'SHW', 'FCX', 'NEM', 'ECL', 'DD', 'NUE', 'DOW', 'CTVA',
-        'VMC', 'MLM', 'PPG', 'ALB', 'IFF', 'CE', 'CF', 'MOS', 'FMC', 'EMN',
-        'AVY', 'IP', 'PKG', 'SEE', 'WRK', 'BALL', 'AMCR'
-    ]
-}
-
-# 서버 캐시 (5분간 유효)
-import time
-heatmap_cache = {}
-CACHE_DURATION = 300  # 5분
-
-@app.get("/api/heatmap-cached")
-async def heatmap_cached(period: str = "1d"):
-    """캐시된 히트맵 데이터 (빠른 로딩)"""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # 입력 순서 유지
+    ordered = []
+    for t in ticker_list:
+        for r in results:
+            if r["ticker"].upper() == t.upper():
+                ordered.append(r)
+                break
     
-    # 캐시 확인
-    cache_key = f"heatmap_{period}"
-    if cache_key in heatmap_cache:
-        cached_data, cached_time = heatmap_cache[cache_key]
-        if time.time() - cached_time < CACHE_DURATION:
-            return cached_data
-    
-    period_map = {"1d": "5d", "1w": "1mo", "1mo": "3mo", "3mo": "1y"}
-    yf_period = period_map.get(period, "1mo")
-    
-    def fetch_stock(ticker):
-        try:
-            stock = yf.Ticker(ticker)
-            info = stock.info
-            df = stock.history(period=yf_period)
-            
-            if df.empty or len(df) < 2:
-                return None
-            
-            last_close = df["Close"].iloc[-1]
-            
-            # 기간에 따른 비교 시점 결정
-            if period == "1d":
-                # 1일: 어제 종가와 비교
-                prev_close = df["Close"].iloc[-2] if len(df) >= 2 else df["Close"].iloc[0]
-            elif period == "1w":
-                # 1주: 약 5거래일 전
-                idx = min(5, len(df) - 1)
-                prev_close = df["Close"].iloc[-idx-1] if len(df) > idx else df["Close"].iloc[0]
-            elif period == "1mo":
-                # 1개월: 약 21거래일 전
-                idx = min(21, len(df) - 1)
-                prev_close = df["Close"].iloc[-idx-1] if len(df) > idx else df["Close"].iloc[0]
-            else:
-                # 3개월: 약 63거래일 전
-                idx = min(63, len(df) - 1)
-                prev_close = df["Close"].iloc[-idx-1] if len(df) > idx else df["Close"].iloc[0]
-            
-            change = ((last_close - prev_close) / prev_close) * 100
-            
-            return {
-                "ticker": ticker,
-                "price": round(last_close, 2),
-                "change": round(change, 2),
-                "marketCap": info.get("marketCap", 1e9),
-                "pe": round(info.get("trailingPE", 0), 1) if info.get("trailingPE") else None,
-                "fwdPe": round(info.get("forwardPE", 0), 1) if info.get("forwardPE") else None
-            }
-        except:
-            return None
-    
-    # 병렬 처리 (50개 스레드)
-    all_tickers = [t for tickers in SECTOR_STOCKS.values() for t in tickers]
-    stock_data = {}
-    
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(fetch_stock, t): t for t in all_tickers}
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                stock_data[result["ticker"]] = result
-    
-    # 섹터별로 그룹화
-    sectors = []
-    for sector_name, tickers in SECTOR_STOCKS.items():
-        stocks = [stock_data[t] for t in tickers if t in stock_data]
-        if stocks:
-            stocks.sort(key=lambda x: x.get("marketCap", 0), reverse=True)
-            sectors.append({"name": sector_name, "stocks": stocks})
-    
-    # 전체 시가총액 기준 정렬
-    sectors.sort(key=lambda x: sum(s.get("marketCap", 0) for s in x["stocks"]), reverse=True)
-    
-    result = {"sectors": sectors}
-    
-    # 캐시 저장
-    heatmap_cache[cache_key] = (result, time.time())
-    
-    return result
+    return {"stocks": ordered}
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
-
-
-
