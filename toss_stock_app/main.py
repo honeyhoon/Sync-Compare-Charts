@@ -4,6 +4,7 @@ FastAPI 서버 (토스 가이드라인 준수)
 """
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import JSONResponse
@@ -16,12 +17,17 @@ import pandas as pd
 import io
 import time
 import base64
+import asyncio
+import os
+import threading
 
 # 전역 캐시 (메모리)
 MACRO_CACHE = {
     "data": None,
     "timestamp": 0
 }
+STOCK_INFO_CACHE = {}  # {ticker: {"name": str, "timestamp": float}}
+CACHE_EXPIRE = 3600 * 6  # 6시간 캐시
 
 app = FastAPI(title="주식 비교 차트", version="1.0.0")
 
@@ -41,6 +47,40 @@ app.add_middleware(
 # 정적 파일 및 템플릿
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+# ========================
+# Health Check & Self-Ping (Render 절전 방지)
+# ========================
+@app.get("/health")
+async def health_check():
+    """Health check 엔드포인트"""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+def self_ping_worker():
+    """14분마다 자기 서버에 Ping 전송 (Render 슬립 방지)"""
+    # Render 환경에서만 동작 (RENDER_EXTERNAL_URL 환경변수 존재 시)
+    base_url = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not base_url:
+        print("[Self-Ping] RENDER_EXTERNAL_URL not set, skipping self-ping (local dev)")
+        return
+    
+    ping_url = f"{base_url}/health"
+    print(f"[Self-Ping] Started - will ping {ping_url} every 14 minutes")
+    
+    while True:
+        time.sleep(840)  # 14분 = 840초
+        try:
+            r = requests.get(ping_url, timeout=10)
+            print(f"[Self-Ping] Keep-Alive Ping sent -> {r.status_code} at {datetime.now().strftime('%H:%M:%S')}")
+        except Exception as e:
+            print(f"[Self-Ping] Ping failed: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 Self-Ping 백그라운드 스레드 시작"""
+    ping_thread = threading.Thread(target=self_ping_worker, daemon=True)
+    ping_thread.start()
 
 
 @app.get("/")
@@ -65,7 +105,11 @@ async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, e
     
     results = []
     
-    for ticker in ticker_list[:6]:
+    async def fetch_stock_data(ticker):
+        # 캐시 확인 (이름 정보 등)
+        cached = STOCK_INFO_CACHE.get(ticker)
+        now_ts = time.time()
+        
         try:
             stock = yf.Ticker(ticker)
             
@@ -76,36 +120,36 @@ async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, e
                 df = stock.history(period=period, interval=interval)
             
             if df.empty:
-                continue
+                return None
             
-            info = stock.info
-            name = info.get("shortName", ticker)
+            # 이름 정보 캐싱 (가장 느린 부분)
+            if cached and (now_ts - cached["timestamp"] < CACHE_EXPIRE):
+                name = cached["name"]
+            else:
+                info = stock.info
+                name = info.get("shortName", ticker)
+                STOCK_INFO_CACHE[ticker] = {"name": name, "timestamp": now_ts}
             
             # 수익률 계산
             first = df["Close"].iloc[0]
-            line_data = []
+            line_data = [{"time": int(idx.timestamp()), "value": round(((row["Close"] - first) / first) * 100, 2)} 
+                         for idx, row in df.iterrows()]
             
-            for idx, row in df.iterrows():
-                pct = ((row["Close"] - first) / first) * 100
-                line_data.append({
-                    "time": int(idx.timestamp()),
-                    "value": round(pct, 2)
-                })
-            
-            current = round(df["Close"].iloc[-1], 2)
-            total = round(((df["Close"].iloc[-1] - first) / first) * 100, 2)
-            
-            results.append({
+            return {
                 "ticker": ticker,
                 "name": name,
-                "price": current,
-                "return": total,
+                "price": round(df["Close"].iloc[-1], 2),
+                "return": round(((df["Close"].iloc[-1] - first) / first) * 100, 2),
                 "data": line_data
-            })
-            
+            }
         except Exception as e:
-            print(f"Error: {ticker} - {e}")
-            continue
+            print(f"Error fetching {ticker}: {e}")
+            return None
+
+    # 병렬 실행 (최대 6종목)
+    tasks = [fetch_stock_data(t) for t in ticker_list[:6]]
+    fetch_results = await asyncio.gather(*tasks)
+    results = [r for r in fetch_results if r]
     
     import datetime
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -264,25 +308,15 @@ async def heatmap_data():
     
     return {"results": results}
 
-from datetime import datetime, timedelta
-import requests
-import io
-
-# 전역 캐시 (메모리)
-MACRO_CACHE = {
-    "data": None,
-    "timestamp": 0
-}
-
 @app.get("/api/macro")
 async def macro_data():
     """FRED 및 주요 글로벌 매크로 지표 (10종 패키지)"""
     global MACRO_CACHE
     current_time = time.time()
     
-    # 6시간 캐싱 (임시 주석 처리 -> 배포 시 해제 권장)
-    # if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 21600):
-    #     return MACRO_CACHE["data"]
+    # 1시간(3600초) 캐싱 - 빠른 로딩을 위해 이전 데이터를 기억
+    if MACRO_CACHE["data"] and (current_time - MACRO_CACHE["timestamp"] < 3600):
+        return MACRO_CACHE["data"]
 
     # 1. 지표 정의 (메르 스타일 10종)
     indicators = {
@@ -385,9 +419,12 @@ async def macro_data():
         base_url = "https://api.stlouisfed.org/fred/series/observations"
         
         try:
+            # 최근 6개월 데이터만 요청 (차트에 최신 그래프 표시)
+            start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
             params = {
                 "series_id": symbol, "api_key": API_KEY, "file_type": "json",
-                "sort_order": "asc", "limit": 120
+                "sort_order": "asc",
+                "observation_start": start_date
             }
             
             response = requests.get(base_url, params=params, timeout=5)
@@ -457,8 +494,9 @@ async def macro_data():
     ordered = [r for s in target_symbols for r in results if r.get('original_symbol') == s]
     
     response_data = {"results": ordered}
-    # MACRO_CACHE["data"] = response_data
-    # MACRO_CACHE["timestamp"] = current_time
+    MACRO_CACHE["data"] = response_data
+    MACRO_CACHE["timestamp"] = current_time
+    print(f"[MACRO] Fetched {len(ordered)} indicators, cached for 1 hour")
     
     return response_data
 
@@ -477,6 +515,14 @@ async def valuation_data(tickers: str):
     
     def fetch_valuation(ticker):
         """개별 종목 밸류에이션 데이터 가져오기"""
+        now_ts = time.time()
+        # 캐시 키는 지표를 포함하므로 'valuation_' 접두사 사용
+        cache_key = f"val_{ticker.upper()}"
+        cached = STOCK_INFO_CACHE.get(cache_key)
+        
+        if cached and (now_ts - cached["timestamp"] < CACHE_EXPIRE):
+            return cached["data"]
+
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
@@ -486,67 +532,47 @@ async def valuation_data(tickers: str):
             market_cap = info.get("marketCap", 0)
             sector = info.get("sector", "")
             
-            # PER
+            # PER 등 주요 지표 수집
             trailing_pe = info.get("trailingPE")
             forward_pe = info.get("forwardPE")
             trailing_eps = info.get("trailingEps")
             forward_eps = info.get("forwardEps")
-            
-            # PBR (Price to Book)
             pbr = info.get("priceToBook")
             book_value = info.get("bookValue")
-            
-            # PSR (Price to Sales)
             psr = info.get("priceToSalesTrailing12Months")
-            revenue_per_share = info.get("revenuePerShare")
             
-            # EV/EBITDA
             ev = info.get("enterpriseValue")
             ebitda = info.get("ebitda")
-            ev_ebitda = None
-            if ev and ebitda and ebitda > 0:
-                ev_ebitda = ev / ebitda
+            ev_ebitda = (ev / ebitda) if ev and ebitda and ebitda > 0 else None
             
-            # 배당수익률
             dividend_yield = info.get("dividendYield")
-            # yfinance info의 dividendYield는 이미 퍼센트 단위(0.34 = 0.34%)인 경우가 많음
-            # 단, trailingAnnualDividendYield 등은 소수점(0.0034)인 경우가 있어 혼동 주의
-            # 여기서는 API가 제공하는 원시값을 그대로 사용하여 정교함을 유지함
-            
-            # ROE
             roe = info.get("returnOnEquity")
-            if roe is not None:
-                roe = roe * 100 # ROE는 소수점 단위(0.15 = 15%)로 제공됨
+            if roe is not None: roe = roe * 100
             
-            # 영업이익률
             operating_margin = info.get("operatingMargins")
-            if operating_margin is not None:
-                operating_margin = operating_margin * 100 # 소수점 단위 (0.21 = 21%)
+            if operating_margin is not None: operating_margin = operating_margin * 100
             
-            return {
+            data = {
                 "ticker": ticker,
                 "name": name,
                 "price": round(price, 2) if price else 0,
                 "marketCap": market_cap,
                 "sector": sector,
-                # PER
                 "trailingPE": round(trailing_pe, 2) if trailing_pe else None,
                 "forwardPE": round(forward_pe, 2) if forward_pe else None,
                 "trailingEPS": round(trailing_eps, 2) if trailing_eps else None,
                 "forwardEPS": round(forward_eps, 2) if forward_eps else None,
-                # PBR
                 "pbr": round(pbr, 2) if pbr else None,
                 "bookValue": round(book_value, 2) if book_value else None,
-                # PSR
                 "psr": round(psr, 2) if psr else None,
-                # EV/EBITDA
                 "evEbitda": round(ev_ebitda, 2) if ev_ebitda else None,
-                # 배당
                 "dividendYield": round(dividend_yield, 2) if dividend_yield else None,
-                # 수익성
                 "roe": round(roe, 2) if roe else None,
                 "operatingMargin": round(operating_margin, 2) if operating_margin else None,
             }
+            # 캐시 저장
+            STOCK_INFO_CACHE[cache_key] = {"data": data, "timestamp": now_ts}
+            return data
         except Exception as e:
             print(f"Valuation Error: {ticker} - {e}")
             return None
@@ -576,6 +602,110 @@ async def valuation_data(tickers: str):
         "timestamp": now,
         "source": "Yahoo Finance"
     }
+
+
+# ========================
+# Gemini AI 질문 답변 API
+# ========================
+from pydantic import BaseModel
+
+class AskRequest(BaseModel):
+    question: str
+    history: list = []  # 대화 히스토리 (선택)
+
+# Gemini API 키 로테이션
+GEMINI_API_KEYS = [
+    "AIzaSyANzeCfdVap12V3f2gjgWRrPWnkvMnptgo",
+]
+GEMINI_KEY_INDEX = 0
+
+SYSTEM_PROMPT = """당신은 한국어 주식/경제 전문 AI 어시스턴트입니다.
+다음 원칙을 따르세요:
+1. 복잡한 경제 개념을 쉽고 직관적인 비유로 설명합니다.
+2. 답변은 간결하되 핵심을 놓치지 않습니다. 불필요한 서론은 생략합니다.
+3. 투자 조언이 아닌 '정보 제공'임을 명확히 합니다.
+4. 데이터나 수치를 언급할 때는 출처(FRED, Yahoo Finance 등)를 명시합니다.
+5. 마크다운 형식(굵은 글씨, 리스트, 이모지 등)을 활용해 가독성을 높입니다.
+6. 한국 투자자 관점에서 환율, 원화 영향 등도 언급합니다.
+7. 확실하지 않은 정보는 "~일 수 있습니다", "확인이 필요합니다" 등으로 표현합니다."""
+
+import httpx
+import json
+
+@app.post("/api/ask")
+async def ask_gemini(req: AskRequest):
+    """Gemini AI에게 주식/경제 관련 질문 (스트리밍 지원)"""
+    global GEMINI_KEY_INDEX
+    
+    question = req.question.strip()
+    if not question:
+        return JSONResponse({"error": "질문을 입력해주세요"}, status_code=400)
+    
+    # 대화 히스토리 구성
+    contents = []
+    contents.append({"role": "user", "parts": [{"text": SYSTEM_PROMPT}]})
+    contents.append({"role": "model", "parts": [{"text": "네, 주식/경제 전문 AI 어시스턴트입니다. 궁금한 점을 편하게 물어보세요!"}]})
+    
+    for msg in req.history[-10:]:
+        role = "user" if msg.get("role") == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": msg.get("content", "")}]})
+    
+    contents.append({"role": "user", "parts": [{"text": question}]})
+
+    async def generate():
+        global GEMINI_KEY_INDEX
+        last_error = ""
+        
+        for attempt in range(len(GEMINI_API_KEYS)):
+            key_idx = (GEMINI_KEY_INDEX + attempt) % len(GEMINI_API_KEYS)
+            api_key = GEMINI_API_KEYS[key_idx]
+            
+            # 스트리밍 API URL
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={api_key}"
+            
+            payload = {
+                "contents": contents,
+                "generationConfig": {
+                    "temperature": 0.7,
+                    "topP": 0.95,
+                    "maxOutputTokens": 2048,
+                }
+            }
+            
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    async with client.stream("POST", url, json=payload) as response:
+                        if response.status_code == 200:
+                            GEMINI_KEY_INDEX = key_idx
+                            full_text = ""
+                            async for line in response.aiter_lines():
+                                if not line: continue
+                                try:
+                                    # Gemini streaming format: Array of chunks
+                                    # line might look like: [{"candidates": [...]}, ...] or just the JSON
+                                    # Since we don't use alt=sse, it returns a JSON array of chunks.
+                                    # Let's use a simpler approach: fetch with alt=sse if possible, 
+                                    # but for standard JSON chunking we just yield text parts.
+                                    chunk_data = json.loads(line.replace("[", "").replace("]", "").strip(","))
+                                    text = chunk_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                                    if text:
+                                        yield text
+                                except:
+                                    continue
+                            return # 성공적으로 스트리밍 완료
+                        elif response.status_code == 429:
+                            last_error = f"API Key {key_idx+1} 할당량 초과"
+                            continue
+                        else:
+                            last_error = f"API 오류 {response.status_code}"
+                            continue
+            except Exception as e:
+                last_error = str(e)
+                continue
+        
+        yield f"⚠️ 에러 발생: {last_error}"
+
+    return StreamingResponse(generate(), media_type="text/plain")
 
 
 if __name__ == "__main__":
