@@ -102,15 +102,14 @@ async function searchAndAdd(query) {
         if (data.results && data.results.length > 0) {
             // 첫 번째 결과(가장 유사한 종목) 추가
             const best = data.results[0];
-            tickerNameMap[best.symbol] = best.name;
-            addTickerDirect(best.symbol);
+            addGlobalTicker(best.symbol, best.name);
         } else {
             // 검색 결과 없으면 그대로 티커로 추가
-            addTickerDirect(query.toUpperCase());
+            addGlobalTicker(query.toUpperCase());
         }
     } catch (e) {
         console.error('Search error:', e);
-        addTickerDirect(query.toUpperCase());
+        addGlobalTicker(query.toUpperCase());
     }
 }
 
@@ -118,14 +117,20 @@ async function searchAndAdd(query) {
 function addTickerDirect(ticker) {
     ticker = ticker.trim();
     if (!ticker || selectedTickers.includes(ticker)) return;
-    if (selectedTickers.length >= 6) {
-        alert('최대 6개까지 추가할 수 있어요');
+
+    if (selectedTickers.length >= 10) {
+        alert('최대 10개까지 추가할 수 있어요');
         return;
     }
 
     selectedTickers.push(ticker);
     updateTags();
     loadData();
+
+    // 밸류에이션 탭과 동기화
+    if (typeof addPerTickerDirect === 'function' && typeof perTickers !== 'undefined' && !perTickers.includes(ticker)) {
+        addPerTickerDirect(ticker);
+    }
 }
 
 // 티커 추가 (칩 클릭 등에서 사용 - 검색 API 통해 이름 가져오기)
@@ -155,18 +160,45 @@ function addTicker(ticker) {
     addTickerDirect(ticker);
 }
 
-// 검색 결과 선택
+// ★ Global Filter: 차트 + 밸류에이션 동시 추가
+function addGlobalTicker(ticker, name) {
+    ticker = ticker.trim();
+    if (!ticker) return;
+
+    // 이름 매핑 저장
+    if (name) {
+        tickerNameMap[ticker] = name;
+        if (typeof perTickerNameMap !== 'undefined') perTickerNameMap[ticker] = name;
+    }
+
+    // 1) 차트 측 추가
+    addTicker(ticker);
+
+    // 2) 밸류에이션 측 추가 (fwdper.js의 함수 호출)
+    if (typeof addPerTickerDirect === 'function') {
+        if (typeof perTickers !== 'undefined' && !perTickers.includes(ticker)) {
+            addPerTickerDirect(ticker);
+        }
+    }
+}
+
+// 검색 결과 선택 (Global Filter: 양쪽 동시 반영)
 function selectSearchResult(symbol, name) {
     if (name) {
         tickerNameMap[symbol] = name;
+        if (typeof perTickerNameMap !== 'undefined') perTickerNameMap[symbol] = name;
     }
     addTickerDirect(symbol);
+    // 밸류에이션에도 추가
+    if (typeof addPerTickerDirect === 'function' && typeof perTickers !== 'undefined' && !perTickers.includes(symbol)) {
+        addPerTickerDirect(symbol);
+    }
     const input = document.getElementById('unified-input');
     if (input) input.value = '';
     document.getElementById('search-results').classList.add('hidden');
 }
 
-// 티커 제거
+// 티커 제거 (Global Filter: 양쪽 동시 제거)
 function removeTicker(ticker) {
     selectedTickers = selectedTickers.filter(t => t !== ticker);
     if (series[ticker]) {
@@ -175,6 +207,10 @@ function removeTicker(ticker) {
     }
     updateTags();
     loadData();
+    // 밸류에이션에서도 제거
+    if (typeof removePerTicker === 'function' && typeof perTickers !== 'undefined' && perTickers.includes(ticker)) {
+        removePerTicker(ticker);
+    }
 }
 
 // 태그 업데이트
