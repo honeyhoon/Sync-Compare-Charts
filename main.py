@@ -204,6 +204,25 @@ async def search_stocks(q: str):
     return {"results": results}
 
 
+def get_korean_stock_name(ticker):
+    """네이버 금융에서 한국 주식 한글 이름 가져오기"""
+    try:
+        from bs4 import BeautifulSoup
+        code = ticker.split(".")[0]
+        url = f"https://finance.naver.com/item/main.naver?code={code}"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+        r.encoding = "euc-kr"
+        soup = BeautifulSoup(r.text, "html.parser")
+        name_tag = soup.select_one("div.wrap_company h2 a")
+        if name_tag:
+            name = name_tag.get_text(strip=True)
+            if name:
+                return name
+    except Exception as e:
+        print(f"[Naver Name] Failed for {ticker}: {e}")
+    return None
+
+
 @app.get("/api/compare")
 async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, end: str = None):
     """여러 종목 비교 API (날짜 범위 지원)"""
@@ -242,8 +261,18 @@ async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, e
             if cached and (now_ts - cached["timestamp"] < CACHE_EXPIRE):
                 name = cached["name"]
             else:
-                info = stock.info
-                name = info.get("shortName", ticker)
+                is_korean = ticker.endswith(".KS") or ticker.endswith(".KQ")
+                name = ticker
+                
+                if is_korean:
+                    # 한국 주식: 네이버 금융에서 한글 이름 가져오기
+                    name = get_korean_stock_name(ticker) or ticker
+                
+                if name == ticker:
+                    # 글로벌 주식 또는 네이버 실패 시 yfinance 사용
+                    info = stock.info
+                    name = info.get("shortName") or info.get("longName") or ticker
+                
                 STOCK_INFO_CACHE[ticker] = {"name": name, "timestamp": now_ts}
             
             # 수익률 계산
@@ -479,80 +508,150 @@ def compute_net_liquidity(ordered_results):
 
 
 def generate_macro_summary(ordered_results, net_liquidity):
-    """경제 지표 기반 한줄 요약 자동 생성"""
-    signals = []
+    """모든 경제 지표를 종합 분석하여 한줄 요약 + 신호등 생성"""
     
-    # 지표별 상태 판단
+    # 지표별 점수: -2(매우 부정) ~ +2(매우 긍정)
+    scores = {}
+    details = []
+    
     for item in ordered_results:
         sym = item.get("original_symbol", item.get("symbol"))
         val = item.get("value", 0)
-        change = item.get("change", 0)
         is_error = item.get("error", False)
-        if is_error:
+        if is_error or val == 0:
             continue
-            
+        
         if sym == "T10Y2Y":
+            # 장단기 금리차: 0 이하=역전(위험), 0~0.3=좁음(주의), 0.3+=정상
             if val < 0:
-                signals.append("yield_inversion")
+                scores["금리차"] = -2
+                details.append("금리역전⚠️")
             elif val < 0.3:
-                signals.append("yield_narrow")
+                scores["금리차"] = -1
+                details.append("금리차 좁음")
+            else:
+                scores["금리차"] = 1
+                details.append("금리차 정상")
+        
         elif sym == "^VIX":
             if val > 30:
-                signals.append("vix_panic")
+                scores["VIX"] = -2
+                details.append(f"VIX {val:.0f} 공포🔴")
             elif val > 20:
-                signals.append("vix_caution")
+                scores["VIX"] = -1
+                details.append(f"VIX {val:.0f} 경계")
+            elif val > 15:
+                scores["VIX"] = 0
+                details.append(f"VIX {val:.0f} 보통")
             else:
-                signals.append("vix_calm")
+                scores["VIX"] = 2
+                details.append(f"VIX {val:.0f} 안정🟢")
+        
         elif sym == "BAMLH0A0HYM2":
+            # 하이일드 스프레드: 5+심각, 4~5주의, ~4정상
             if val > 5:
-                signals.append("credit_stress")
+                scores["신용"] = -2
+                details.append("신용스프레드 확대⚠️")
             elif val > 4:
-                signals.append("credit_caution")
+                scores["신용"] = -1
+                details.append("신용스프레드 주의")
+            else:
+                scores["신용"] = 1
+                details.append("신용스프레드 안정")
+        
         elif sym == "FEDFUNDS":
             if val >= 5:
-                signals.append("rate_tight")
+                scores["금리"] = -1
+                details.append(f"기준금리 {val:.1f}% 긴축")
+            elif val >= 3:
+                scores["금리"] = 0
+                details.append(f"기준금리 {val:.1f}%")
             elif val <= 2:
-                signals.append("rate_easy")
+                scores["금리"] = 1
+                details.append(f"기준금리 {val:.1f}% 완화")
+        
+        elif sym == "T10YIE":
+            # 기대인플레이션: 2.5%+높음, 2~2.5보통, ~2낮음
+            if val > 2.5:
+                scores["인플레"] = -1
+                details.append(f"기대인플레 {val:.1f}%↑")
+            elif val >= 2.0:
+                scores["인플레"] = 0
+                details.append(f"기대인플레 {val:.1f}%")
+            else:
+                scores["인플레"] = 1
+                details.append(f"기대인플레 {val:.1f}%↓")
+        
+        elif sym == "DGS10":
+            # 10년물 금리
+            if val > 4.5:
+                scores["장기금리"] = -1
+                details.append(f"10Y {val:.1f}% 고금리")
+            elif val > 3.5:
+                scores["장기금리"] = 0
+                details.append(f"10Y {val:.1f}%")
+            else:
+                scores["장기금리"] = 1
+                details.append(f"10Y {val:.1f}% 저금리")
+        
+        elif sym == "M2SL":
+            change = item.get("change", 0)
+            if change > 0.5:
+                scores["M2"] = 1
+                details.append("M2 통화량↑")
+            elif change < -0.5:
+                scores["M2"] = -1
+                details.append("M2 통화량↓")
     
-    # 순유동성 방향
+    # 순유동성Liquidity)
     if net_liquidity and not net_liquidity.get("error"):
         nl_change = net_liquidity.get("change", 0)
-        if nl_change > 0.5:
-            signals.append("liquidity_expanding")
-        elif nl_change < -0.5:
-            signals.append("liquidity_shrinking")
+        if nl_change > 1:
+            scores["유동성"] = 2
+            details.append(f"순유동성 +{nl_change:.1f}%🟢")
+        elif nl_change > 0:
+            scores["유동성"] = 1
+            details.append(f"순유동성 +{nl_change:.1f}%")
+        elif nl_change > -1:
+            scores["유동성"] = -1
+            details.append(f"순유동성 {nl_change:.1f}%")
+        else:
+            scores["유동성"] = -2
+            details.append(f"순유동성 {nl_change:.1f}%🔴")
     
-    # 요약 문장 + 신호등 레벨 생성 (red / yellow / green)
-    if "vix_panic" in signals:
-        text = "시장 공포(VIX 30+)가 극심합니다. 변동성 확대에 대비하고 현금 비중 확대를 고려하세요."
+    # 종합 점수 계산
+    if not scores:
+        return {"text": "지표 데이터를 가져오는 중입니다.", "level": "yellow"}
+    
+    total_score = sum(scores.values())
+    max_possible = len(scores) * 2
+    min_possible = len(scores) * -2
+    
+    # 점수 비율 (-1.0 ~ +1.0)
+    if max_possible > 0:
+        ratio = total_score / max_possible if total_score >= 0 else total_score / abs(min_possible)
+    else:
+        ratio = 0
+    
+    # 신호등 결정
+    if total_score <= -3 or ratio <= -0.4:
         level = "red"
-    elif "yield_inversion" in signals and "credit_stress" in signals:
-        text = "장단기 금리 역전 + 신용 스프레드 확대: 경기 침체 경고등이 켜져 있습니다. 방어적 포트폴리오를 권장합니다."
-        level = "red"
-    elif "yield_inversion" in signals:
-        text = "장단기 금리가 역전 중입니다. 역사적으로 침체 선행 신호이나, 역전 해소 시점이 더 중요합니다."
-        level = "yellow"
-    elif "liquidity_shrinking" in signals and "rate_tight" in signals:
-        text = "연준 긴축 + 유동성 감소: 자산 시장에 불리한 환경입니다. 리스크 관리에 유의하세요."
-        level = "red"
-    elif "liquidity_expanding" in signals and "vix_calm" in signals:
-        text = "유동성 확대 + 시장 안정: 위험 자산에 우호적인 환경입니다. 다만 밸류에이션 과열에 주의하세요."
-        level = "green"
-    elif "liquidity_expanding" in signals:
-        text = "순유동성이 증가 추세입니다. 시장에 돈이 풀리고 있어 자산 가격에 긍정적인 신호입니다."
-        level = "green"
-    elif "liquidity_shrinking" in signals:
-        text = "순유동성이 감소 중입니다. 유동성 축소는 자산 시장 전반의 하방 압력을 높일 수 있습니다."
-        level = "yellow"
-    elif "rate_tight" in signals:
-        text = "기준금리가 높은 수준을 유지 중입니다. 금리 인하 전환 시점에 주목하세요."
-        level = "yellow"
-    elif "vix_caution" in signals:
-        text = "VIX가 경계 수준(20~30)입니다. 지정학적 리스크나 매크로 이벤트에 주의하세요."
+    elif total_score <= 0 or ratio <= 0.1:
         level = "yellow"
     else:
-        text = "현재 주요 매크로 지표는 대체로 안정적입니다. 급격한 변화 시점을 지속 모니터링하세요."
         level = "green"
+    
+    # 종합 판단문 생성
+    detail_str = " | ".join(details[:6])  # 최대 6개 지표 표시
+    
+    if level == "red":
+        judgment = "→ 리스크 관리가 필요한 시점입니다. 방어적 포지션을 고려하세요."
+    elif level == "yellow":
+        judgment = "→ 혼조세입니다. 선별적 접근과 모니터링이 필요합니다."
+    else:
+        judgment = "→ 전반적으로 자산시장에 우호적인 환경입니다."
+    
+    text = f"{detail_str} {judgment}"
     
     return {"text": text, "level": level}
 
