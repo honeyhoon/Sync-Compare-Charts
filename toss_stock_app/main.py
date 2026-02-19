@@ -308,6 +308,129 @@ async def heatmap_data():
     
     return {"results": results}
 
+def compute_net_liquidity(ordered_results):
+    """순유동성(Net Liquidity) = WALCL - WTREGEN - RRPONTSYD 계산"""
+    # 각 지표의 chart_data를 {날짜: 값} 딕셔너리로 변환
+    series = {}
+    for item in ordered_results:
+        sym = item.get("original_symbol", item.get("symbol"))
+        if sym in ("WALCL", "WTREGEN", "RRPONTSYD"):
+            data = item.get("chart_data", [])
+            series[sym] = {d["time"]: d["value"] for d in data}
+    
+    if not all(k in series for k in ("WALCL", "WTREGEN", "RRPONTSYD")):
+        return {"error": True, "message": "순유동성 계산에 필요한 지표(WALCL, WTREGEN, RRPONTSYD) 중 일부를 가져오지 못했습니다.", "chart_data": []}
+    
+    # 모든 날짜 합치기
+    all_dates = sorted(set(list(series["WALCL"].keys()) + list(series["WTREGEN"].keys()) + list(series["RRPONTSYD"].keys())))
+    
+    if not all_dates:
+        return {"error": True, "message": "시계열 데이터가 비어 있습니다.", "chart_data": []}
+    
+    # Forward-fill 방식으로 날짜 병합 후 계산
+    chart_data = []
+    last = {"WALCL": None, "WTREGEN": None, "RRPONTSYD": None}
+    
+    for date in all_dates:
+        for sym in ("WALCL", "WTREGEN", "RRPONTSYD"):
+            if date in series[sym]:
+                last[sym] = series[sym][date]
+        
+        if all(v is not None for v in last.values()):
+            # WALCL은 백만달러, WTREGEN도 백만달러, RRPONTSYD는 10억달러 단위
+            # FRED 기준: WALCL(백만$), WTREGEN(백만$), RRPONTSYD(십억$)
+            # 통일을 위해 RRPONTSYD를 백만 단위로 변환 (×1000)
+            net = last["WALCL"] - last["WTREGEN"] - (last["RRPONTSYD"] * 1000)
+            chart_data.append({"time": date, "value": round(net, 2)})
+    
+    if not chart_data:
+        return {"error": True, "message": "날짜 병합 후 유효한 데이터가 없습니다.", "chart_data": []}
+    
+    current_val = chart_data[-1]["value"]
+    prev_val = chart_data[-2]["value"] if len(chart_data) > 1 else current_val
+    change = ((current_val - prev_val) / abs(prev_val)) * 100 if prev_val != 0 else 0.0
+    
+    return {
+        "error": False,
+        "name": "순유동성 (Net Liquidity)",
+        "symbol": "NET_LIQ",
+        "desc": "연준 총자산에서 TGA와 역래포를 뺀 실질 유동성. 이 값이 증가하면 시장에 돈이 풀리고 있다는 의미이며, 주가에 우호적입니다.",
+        "value": round(current_val, 0),
+        "change": round(change, 2),
+        "chart_data": chart_data,
+        "link": "https://fred.stlouisfed.org/series/WALCL"
+    }
+
+
+def generate_macro_summary(ordered_results, net_liquidity):
+    """경제 지표 기반 한줄 요약 자동 생성"""
+    signals = []
+    
+    # 지표별 상태 판단
+    for item in ordered_results:
+        sym = item.get("original_symbol", item.get("symbol"))
+        val = item.get("value", 0)
+        change = item.get("change", 0)
+        is_error = item.get("error", False)
+        if is_error:
+            continue
+            
+        if sym == "T10Y2Y":
+            if val < 0:
+                signals.append("yield_inversion")
+            elif val < 0.3:
+                signals.append("yield_narrow")
+        elif sym == "^VIX":
+            if val > 30:
+                signals.append("vix_panic")
+            elif val > 20:
+                signals.append("vix_caution")
+            else:
+                signals.append("vix_calm")
+        elif sym == "BAMLH0A0HYM2":
+            if val > 5:
+                signals.append("credit_stress")
+            elif val > 4:
+                signals.append("credit_caution")
+        elif sym == "FEDFUNDS":
+            if val >= 5:
+                signals.append("rate_tight")
+            elif val <= 2:
+                signals.append("rate_easy")
+    
+    # 순유동성 방향
+    if net_liquidity and not net_liquidity.get("error"):
+        nl_change = net_liquidity.get("change", 0)
+        if nl_change > 0.5:
+            signals.append("liquidity_expanding")
+        elif nl_change < -0.5:
+            signals.append("liquidity_shrinking")
+    
+    # 요약 문장 생성
+    if "vix_panic" in signals:
+        summary = "시장 공포(VIX 30+)가 극심합니다. 변동성 확대에 대비하고 현금 비중 확대를 고려하세요."
+    elif "yield_inversion" in signals and "credit_stress" in signals:
+        summary = "장단기 금리 역전 + 신용 스프레드 확대: 경기 침체 경고등이 켜져 있습니다. 방어적 포트폴리오를 권장합니다."
+    elif "yield_inversion" in signals:
+        summary = "장단기 금리가 역전 중입니다. 역사적으로 침체 선행 신호이나, 역전 해소 시점이 더 중요합니다."
+    elif "liquidity_shrinking" in signals and "rate_tight" in signals:
+        summary = "연준 긴축 + 유동성 감소: 자산 시장에 불리한 환경입니다. 리스크 관리에 유의하세요."
+    elif "liquidity_expanding" in signals and "vix_calm" in signals:
+        summary = "유동성 확대 + 시장 안정: 위험 자산에 우호적인 환경입니다. 다만 밸류에이션 과열에 주의하세요."
+    elif "liquidity_expanding" in signals:
+        summary = "순유동성이 증가 추세입니다. 시장에 돈이 풀리고 있어 자산 가격에 긍정적인 신호입니다."
+    elif "liquidity_shrinking" in signals:
+        summary = "순유동성이 감소 중입니다. 유동성 축소는 자산 시장 전반의 하방 압력을 높일 수 있습니다."
+    elif "rate_tight" in signals:
+        summary = "기준금리가 높은 수준을 유지 중입니다. 금리 인하 전환 시점에 주목하세요."
+    elif "vix_caution" in signals:
+        summary = "VIX가 경계 수준(20~30)입니다. 지정학적 리스크나 매크로 이벤트에 주의하세요."
+    else:
+        summary = "현재 주요 매크로 지표는 대체로 안정적입니다. 급격한 변화 시점을 지속 모니터링하세요."
+    
+    return summary
+
+
 @app.get("/api/macro")
 async def macro_data():
     """FRED 및 주요 글로벌 매크로 지표 (10종 패키지)"""
@@ -373,6 +496,24 @@ async def macro_data():
             "desc": "연준이 푼 돈의 총량(QT/QE). 그래프가 꺾여 내려가면 시장 유동성이 줄어들고 있다는 뜻입니다.",
             "link": "https://fred.stlouisfed.org/series/WALCL",
             "source": "FRED", "fallback": "BTC-USD"
+        },
+        "WTREGEN": {
+            "name": "재무부 일반계정 (TGA)", 
+            "desc": "미 재무부가 보유한 현금. TGA가 줄어들면 시장에 유동성이 공급되고, 늘어나면 유동성이 흡수됩니다.",
+            "link": "https://fred.stlouisfed.org/series/WTREGEN",
+            "source": "FRED", "fallback": None
+        },
+        "M2SL": {
+            "name": "M2 통화량 (Money Supply)", 
+            "desc": "시중에 풀린 돈의 총량. M2가 증가하면 인플레이션 압력이 커지고, 감소하면 긴축 신호입니다.",
+            "link": "https://fred.stlouisfed.org/series/M2SL",
+            "source": "FRED", "fallback": None
+        },
+        "FEDFUNDS": {
+            "name": "연방기금금리 (Fed Rate)", 
+            "desc": "연준의 기준금리. 모든 금리의 기준이며, 인상 시 경기 긴축, 인하 시 경기 부양 신호입니다.",
+            "link": "https://fred.stlouisfed.org/series/FEDFUNDS",
+            "source": "FRED", "fallback": None
         },
         "^VIX": {
             "name": "공포 지수 (VIX)", 
@@ -493,10 +634,16 @@ async def macro_data():
     # 4. 정렬 (매우 중요: original_symbol 사용)
     ordered = [r for s in target_symbols for r in results if r.get('original_symbol') == s]
     
-    response_data = {"results": ordered}
+    # 5. 순유동성(Net Liquidity) 계산: WALCL - WTREGEN - RRPONTSYD
+    net_liquidity = compute_net_liquidity(ordered)
+    
+    # 6. 한줄 요약 생성
+    summary = generate_macro_summary(ordered, net_liquidity)
+    
+    response_data = {"results": ordered, "net_liquidity": net_liquidity, "summary": summary}
     MACRO_CACHE["data"] = response_data
     MACRO_CACHE["timestamp"] = current_time
-    print(f"[MACRO] Fetched {len(ordered)} indicators, cached for 1 hour")
+    print(f"[MACRO] Fetched {len(ordered)} indicators + Net Liquidity, cached for 1 hour")
     
     return response_data
 
@@ -660,8 +807,8 @@ async def ask_gemini(req: AskRequest):
             key_idx = (GEMINI_KEY_INDEX + attempt) % len(GEMINI_API_KEYS)
             api_key = GEMINI_API_KEYS[key_idx]
             
-            # 스트리밍 API URL
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key={api_key}"
+            # SSE 스트리밍 API URL (alt=sse로 안정적 파싱)
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
             
             payload = {
                 "contents": contents,
@@ -673,37 +820,39 @@ async def ask_gemini(req: AskRequest):
             }
             
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
+                async with httpx.AsyncClient(timeout=60.0) as client:
                     async with client.stream("POST", url, json=payload) as response:
                         if response.status_code == 200:
                             GEMINI_KEY_INDEX = key_idx
-                            full_text = ""
                             async for line in response.aiter_lines():
-                                if not line: continue
-                                try:
-                                    # Gemini streaming format: Array of chunks
-                                    # line might look like: [{"candidates": [...]}, ...] or just the JSON
-                                    # Since we don't use alt=sse, it returns a JSON array of chunks.
-                                    # Let's use a simpler approach: fetch with alt=sse if possible, 
-                                    # but for standard JSON chunking we just yield text parts.
-                                    chunk_data = json.loads(line.replace("[", "").replace("]", "").strip(","))
-                                    text = chunk_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                                    if text:
-                                        yield text
-                                except:
+                                # SSE 형식: "data: {...JSON...}"
+                                if not line or not line.startswith("data: "):
                                     continue
-                            return # 성공적으로 스트리밍 완료
+                                try:
+                                    json_str = line[6:]  # "data: " 제거
+                                    chunk_data = json.loads(json_str)
+                                    candidates = chunk_data.get("candidates", [])
+                                    if candidates:
+                                        parts = candidates[0].get("content", {}).get("parts", [])
+                                        for part in parts:
+                                            text = part.get("text", "")
+                                            if text:
+                                                yield text
+                                except json.JSONDecodeError:
+                                    continue
+                            return  # 성공적으로 스트리밍 완료
                         elif response.status_code == 429:
                             last_error = f"API Key {key_idx+1} 할당량 초과"
                             continue
                         else:
-                            last_error = f"API 오류 {response.status_code}"
+                            body = await response.aread()
+                            last_error = f"API 오류 {response.status_code}: {body.decode()[:200]}"
                             continue
             except Exception as e:
                 last_error = str(e)
                 continue
         
-        yield f"⚠️ 에러 발생: {last_error}"
+        yield f"에러 발생: {last_error}"
 
     return StreamingResponse(generate(), media_type="text/plain")
 
