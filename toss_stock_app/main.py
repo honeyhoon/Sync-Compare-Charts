@@ -88,6 +88,122 @@ async def home(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+# ========================
+# 한국 주식 검색 (KRX 종목 리스트)
+# ========================
+KRX_STOCK_LIST = []  # [{code, name}, ...]
+KRX_CACHE_TIME = 0
+
+def load_krx_stock_list():
+    """KRX 전체 종목 리스트 로드 (KOSPI + KOSDAQ)"""
+    global KRX_STOCK_LIST, KRX_CACHE_TIME
+    
+    # 24시간 캐시
+    if KRX_STOCK_LIST and (time.time() - KRX_CACHE_TIME < 86400):
+        return KRX_STOCK_LIST
+    
+    try:
+        # KRX 종목 리스트를 krx.co.kr에서 가져오기
+        headers = {"User-Agent": "Mozilla/5.0"}
+        
+        all_stocks = []
+        
+        # KOSPI
+        for market_type in ["stockMkt", "kosdaqMkt"]:
+            url = "http://kind.krx.co.kr/corpgeneral/corpList.do"
+            params = {"method": "download", "marketType": market_type}
+            try:
+                res = requests.get(url, params=params, headers=headers, timeout=10)
+                df = pd.read_html(io.StringIO(res.text))[0]
+                for _, row in df.iterrows():
+                    code = str(row["종목코드"]).zfill(6)
+                    name = str(row["회사명"]).strip()
+                    all_stocks.append({"code": code, "name": name})
+            except Exception as e:
+                print(f"[KRX] Failed to load {market_type}: {e}")
+        
+        if all_stocks:
+            KRX_STOCK_LIST = all_stocks
+            KRX_CACHE_TIME = time.time()
+            print(f"[KRX] Loaded {len(all_stocks)} Korean stocks")
+        
+        return KRX_STOCK_LIST
+    except Exception as e:
+        print(f"[KRX] Error loading stock list: {e}")
+        return KRX_STOCK_LIST
+
+
+@app.get("/api/search")
+async def search_stocks(q: str):
+    """종목 검색 API - 한국 주식 이름 및 글로벌 티커 검색"""
+    query = q.strip()
+    if not query:
+        return {"results": []}
+    
+    results = []
+    
+    # 1. 한국어가 포함되어 있으면 KRX에서 검색
+    has_korean = any('\uac00' <= c <= '\ud7a3' for c in query)
+    
+    if has_korean:
+        krx_list = load_krx_stock_list()
+        
+        # 정확히 일치하는 것 먼저
+        exact = [s for s in krx_list if s["name"] == query]
+        # 포함하는 것
+        partial = [s for s in krx_list if query in s["name"] and s not in exact]
+        
+        matches = (exact + partial)[:10]
+        
+        for stock in matches:
+            # Yahoo Finance 형식: 6자리코드.KS (KOSPI) 또는 .KQ (KOSDAQ)
+            # 먼저 .KS로 시도, 실패 시 .KQ
+            yahoo_ticker = f"{stock['code']}.KS"
+            results.append({
+                "symbol": yahoo_ticker,
+                "name": stock["name"],
+                "type": "KRX"
+            })
+    else:
+        # 2. 영문 입력: yfinance로 직접 검색 시도
+        query_upper = query.upper()
+        
+        # 먼저 KRX에서 코드 검색 (숫자 6자리 입력 시)
+        if query.isdigit() and len(query) == 6:
+            krx_list = load_krx_stock_list()
+            code_match = [s for s in krx_list if s["code"] == query]
+            if code_match:
+                results.append({
+                    "symbol": f"{query}.KS",
+                    "name": code_match[0]["name"],
+                    "type": "KRX"
+                })
+        
+        # yfinance로 티커 검색
+        try:
+            ticker = yf.Ticker(query_upper)
+            info = ticker.info
+            name = info.get("shortName") or info.get("longName") or query_upper
+            if info.get("regularMarketPrice") or info.get("previousClose"):
+                results.append({
+                    "symbol": query_upper,
+                    "name": name,
+                    "type": "GLOBAL"
+                })
+        except:
+            pass
+        
+        # 결과가 없으면 그대로 반환
+        if not results:
+            results.append({
+                "symbol": query_upper,
+                "name": query_upper,
+                "type": "UNKNOWN"
+            })
+    
+    return {"results": results}
+
+
 @app.get("/api/compare")
 async def compare_stocks(tickers: str, period: str = "1mo", start: str = None, end: str = None):
     """여러 종목 비교 API (날짜 범위 지원)"""
@@ -406,29 +522,39 @@ def generate_macro_summary(ordered_results, net_liquidity):
         elif nl_change < -0.5:
             signals.append("liquidity_shrinking")
     
-    # 요약 문장 생성
+    # 요약 문장 + 신호등 레벨 생성 (red / yellow / green)
     if "vix_panic" in signals:
-        summary = "시장 공포(VIX 30+)가 극심합니다. 변동성 확대에 대비하고 현금 비중 확대를 고려하세요."
+        text = "시장 공포(VIX 30+)가 극심합니다. 변동성 확대에 대비하고 현금 비중 확대를 고려하세요."
+        level = "red"
     elif "yield_inversion" in signals and "credit_stress" in signals:
-        summary = "장단기 금리 역전 + 신용 스프레드 확대: 경기 침체 경고등이 켜져 있습니다. 방어적 포트폴리오를 권장합니다."
+        text = "장단기 금리 역전 + 신용 스프레드 확대: 경기 침체 경고등이 켜져 있습니다. 방어적 포트폴리오를 권장합니다."
+        level = "red"
     elif "yield_inversion" in signals:
-        summary = "장단기 금리가 역전 중입니다. 역사적으로 침체 선행 신호이나, 역전 해소 시점이 더 중요합니다."
+        text = "장단기 금리가 역전 중입니다. 역사적으로 침체 선행 신호이나, 역전 해소 시점이 더 중요합니다."
+        level = "yellow"
     elif "liquidity_shrinking" in signals and "rate_tight" in signals:
-        summary = "연준 긴축 + 유동성 감소: 자산 시장에 불리한 환경입니다. 리스크 관리에 유의하세요."
+        text = "연준 긴축 + 유동성 감소: 자산 시장에 불리한 환경입니다. 리스크 관리에 유의하세요."
+        level = "red"
     elif "liquidity_expanding" in signals and "vix_calm" in signals:
-        summary = "유동성 확대 + 시장 안정: 위험 자산에 우호적인 환경입니다. 다만 밸류에이션 과열에 주의하세요."
+        text = "유동성 확대 + 시장 안정: 위험 자산에 우호적인 환경입니다. 다만 밸류에이션 과열에 주의하세요."
+        level = "green"
     elif "liquidity_expanding" in signals:
-        summary = "순유동성이 증가 추세입니다. 시장에 돈이 풀리고 있어 자산 가격에 긍정적인 신호입니다."
+        text = "순유동성이 증가 추세입니다. 시장에 돈이 풀리고 있어 자산 가격에 긍정적인 신호입니다."
+        level = "green"
     elif "liquidity_shrinking" in signals:
-        summary = "순유동성이 감소 중입니다. 유동성 축소는 자산 시장 전반의 하방 압력을 높일 수 있습니다."
+        text = "순유동성이 감소 중입니다. 유동성 축소는 자산 시장 전반의 하방 압력을 높일 수 있습니다."
+        level = "yellow"
     elif "rate_tight" in signals:
-        summary = "기준금리가 높은 수준을 유지 중입니다. 금리 인하 전환 시점에 주목하세요."
+        text = "기준금리가 높은 수준을 유지 중입니다. 금리 인하 전환 시점에 주목하세요."
+        level = "yellow"
     elif "vix_caution" in signals:
-        summary = "VIX가 경계 수준(20~30)입니다. 지정학적 리스크나 매크로 이벤트에 주의하세요."
+        text = "VIX가 경계 수준(20~30)입니다. 지정학적 리스크나 매크로 이벤트에 주의하세요."
+        level = "yellow"
     else:
-        summary = "현재 주요 매크로 지표는 대체로 안정적입니다. 급격한 변화 시점을 지속 모니터링하세요."
+        text = "현재 주요 매크로 지표는 대체로 안정적입니다. 급격한 변화 시점을 지속 모니터링하세요."
+        level = "green"
     
-    return summary
+    return {"text": text, "level": level}
 
 
 @app.get("/api/macro")
@@ -660,6 +786,54 @@ async def valuation_data(tickers: str):
     
     from concurrent.futures import ThreadPoolExecutor, as_completed
     
+    def fetch_naver_valuation(ticker):
+        """네이버 금융에서 한국 주식 PER/PBR 가져오기 (yfinance 폴백)"""
+        try:
+            from bs4 import BeautifulSoup
+            # 티커에서 종목코드 추출: 080220.KS -> 080220
+            code = ticker.split(".")[0]
+            url = f"https://finance.naver.com/item/main.naver?code={code}"
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            r.encoding = "euc-kr"
+            soup = BeautifulSoup(r.text, "html.parser")
+            
+            result = {}
+            
+            # 종목명
+            name_tag = soup.select_one("div.wrap_company h2 a")
+            if name_tag:
+                result["name"] = name_tag.get_text(strip=True)
+            
+            # PER (id="_per"), PBR (id="_pbr"), 배당수익률 (id="_dvr")
+            per_tag = soup.select_one("#_per")
+            pbr_tag = soup.select_one("#_pbr")
+            dvr_tag = soup.select_one("#_dvr")
+            
+            if per_tag:
+                per_text = per_tag.get_text(strip=True).replace(",", "")
+                if per_text and per_text != "N/A":
+                    try: result["per"] = float(per_text)
+                    except: pass
+            
+            if pbr_tag:
+                pbr_text = pbr_tag.get_text(strip=True).replace(",", "")
+                if pbr_text and pbr_text != "N/A":
+                    try: result["pbr"] = float(pbr_text)
+                    except: pass
+            
+            if dvr_tag:
+                dvr_text = dvr_tag.get_text(strip=True).replace(",", "").replace("%", "")
+                if dvr_text and dvr_text != "N/A":
+                    try: result["dividendYield"] = float(dvr_text) / 100
+                    except: pass
+            
+            if result:
+                print(f"[Naver] {ticker}: PER={result.get('per')}, PBR={result.get('pbr')}")
+            return result if result else None
+        except Exception as e:
+            print(f"[Naver] Failed for {ticker}: {e}")
+            return None
+    
     def fetch_valuation(ticker):
         """개별 종목 밸류에이션 데이터 가져오기"""
         now_ts = time.time()
@@ -698,6 +872,17 @@ async def valuation_data(tickers: str):
             
             operating_margin = info.get("operatingMargins")
             if operating_margin is not None: operating_margin = operating_margin * 100
+            
+            # 한국 주식 폴백: yfinance에서 PER/PBR이 없으면 네이버 금융에서 가져오기
+            is_korean = ticker.endswith(".KS") or ticker.endswith(".KQ")
+            if is_korean and trailing_pe is None and pbr is None:
+                naver_data = fetch_naver_valuation(ticker)
+                if naver_data:
+                    trailing_pe = trailing_pe or naver_data.get("per")
+                    pbr = pbr or naver_data.get("pbr")
+                    dividend_yield = dividend_yield or naver_data.get("dividendYield")
+                    if naver_data.get("name"):
+                        name = naver_data["name"]
             
             data = {
                 "ticker": ticker,
@@ -760,10 +945,13 @@ class AskRequest(BaseModel):
     question: str
     history: list = []  # 대화 히스토리 (선택)
 
-# Gemini API 키 로테이션
-GEMINI_API_KEYS = [
-    "AIzaSyANzeCfdVap12V3f2gjgWRrPWnkvMnptgo",
-]
+# Gemini API 키 (환경변수 전용 - 코드에 키를 넣으면 Google이 유출로 감지합니다)
+# 로컬: set GEMINI_API_KEYS=your_key_here (CMD) 또는 $env:GEMINI_API_KEYS="your_key_here" (PowerShell)
+# Render: Environment Variables에서 GEMINI_API_KEYS 설정
+_raw_keys = os.environ.get("GEMINI_API_KEYS", "")
+GEMINI_API_KEYS = [k.strip() for k in _raw_keys.split(",") if k.strip()]
+if not GEMINI_API_KEYS:
+    print("[WARNING] GEMINI_API_KEYS 환경변수 미설정. AI 채팅 비활성화.")
 GEMINI_KEY_INDEX = 0
 
 SYSTEM_PROMPT = """당신은 한국어 주식/경제 전문 AI 어시스턴트입니다.
@@ -788,6 +976,9 @@ async def ask_gemini(req: AskRequest):
     if not question:
         return JSONResponse({"error": "질문을 입력해주세요"}, status_code=400)
     
+    if not GEMINI_API_KEYS:
+        return JSONResponse({"error": "AI 서비스가 설정되지 않았습니다. 관리자에게 문의하세요."}, status_code=503)
+    
     # 대화 히스토리 구성
     contents = []
     contents.append({"role": "user", "parts": [{"text": SYSTEM_PROMPT}]})
@@ -808,7 +999,7 @@ async def ask_gemini(req: AskRequest):
             api_key = GEMINI_API_KEYS[key_idx]
             
             # SSE 스트리밍 API URL (alt=sse로 안정적 파싱)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key={api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key={api_key}"
             
             payload = {
                 "contents": contents,
