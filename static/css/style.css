@@ -1788,22 +1788,64 @@ body {
     }
 }
 
-/* 한줄 요약 박스 */
+/* 한줄 요약 박스 (신호등 포함) */
 .macro-summary-box {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
+    align-items: center;
+    gap: 16px;
     padding: 16px 20px;
     background: linear-gradient(135deg, #F0F6FF, #E8F5E9);
     border: 1px solid #D0E3FF;
     border-radius: 16px;
     margin-bottom: 20px;
+    transition: all 0.3s ease;
 }
 
-.summary-icon {
-    font-size: 24px;
+.traffic-light {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
     flex-shrink: 0;
-    line-height: 1;
+    background: #2a2a2a;
+    padding: 8px 6px;
+    border-radius: 12px;
+}
+
+.tl-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    transition: all 0.3s ease;
+}
+
+.tl-dot.active {
+    background: var(--dot-color);
+    box-shadow: 0 0 8px var(--dot-color), 0 0 16px var(--dot-color);
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from {
+        box-shadow: 0 0 6px var(--dot-color);
+    }
+
+    to {
+        box-shadow: 0 0 14px var(--dot-color), 0 0 20px var(--dot-color);
+    }
+}
+
+.summary-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.summary-label {
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .summary-text {
