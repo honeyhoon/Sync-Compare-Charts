@@ -142,7 +142,7 @@ async function loadPerData() {
         const data = await res.json();
         if (data.stocks) {
             perData = data.stocks;
-            perData.forEach(s => { if (s.name) perTickerNameMap[s.ticker] = s.name; });
+            perData.forEach(s => { if (s.name && !perTickerNameMap[s.ticker]) perTickerNameMap[s.ticker] = s.name; });
             renderPerTable();
         }
     } catch (e) {
@@ -199,7 +199,7 @@ function renderPerTable() {
         const priceStr = isKR ? `₩${stock.price?.toLocaleString()}` : `$${stock.price?.toLocaleString()}`;
         html += `<tr>
             <td class="stock-info-cell">
-                <div class="stock-name">${stock.name || stock.ticker}</div>
+                <div class="stock-name">${perTickerNameMap[stock.ticker] || stock.name || stock.ticker}</div>
                 <div class="stock-ticker">${stock.ticker}</div>
             </td>
             <td class="price-cell">${priceStr}</td>`;
