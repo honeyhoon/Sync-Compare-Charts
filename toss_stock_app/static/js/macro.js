@@ -45,15 +45,24 @@ async function loadMacroData() {
 }
 
 function renderMacroSummary(summary) {
+    // summary는 {text: "...", level: "red|yellow|green"} 객체
+    const text = typeof summary === 'string' ? summary : summary.text;
+    const level = typeof summary === 'string' ? 'green' : (summary.level || 'green');
+
+    // 신호등 색상 매핑
+    const lightConfig = {
+        red: { color: '#F04452', bg: 'linear-gradient(135deg, #FFF0F0, #FFE8E8)', border: '#FFD0D0', label: '위험' },
+        yellow: { color: '#FF9800', bg: 'linear-gradient(135deg, #FFF8E1, #FFF3CD)', border: '#FFE0A0', label: '주의' },
+        green: { color: '#00C853', bg: 'linear-gradient(135deg, #E8F5E9, #F0FFF0)', border: '#C8E6C9', label: '안정' }
+    };
+    const cfg = lightConfig[level] || lightConfig.green;
+
     let summaryEl = document.getElementById('macro-summary');
     if (!summaryEl) {
-        // 동적으로 생성
         const section = document.querySelector('.macro-section');
         if (!section) return;
         summaryEl = document.createElement('div');
         summaryEl.id = 'macro-summary';
-        summaryEl.className = 'macro-summary-box';
-        // macro-header 다음에 삽입
         const header = section.querySelector('.macro-header');
         if (header && header.nextSibling) {
             section.insertBefore(summaryEl, header.nextSibling);
@@ -61,9 +70,21 @@ function renderMacroSummary(summary) {
             section.appendChild(summaryEl);
         }
     }
+
+    summaryEl.className = 'macro-summary-box';
+    summaryEl.style.background = cfg.bg;
+    summaryEl.style.borderColor = cfg.border;
+
     summaryEl.innerHTML = `
-        <div class="summary-icon">&#x1f4a1;</div>
-        <div class="summary-text">${summary}</div>
+        <div class="traffic-light">
+            <span class="tl-dot ${level === 'red' ? 'active' : ''}" style="--dot-color: #F04452;"></span>
+            <span class="tl-dot ${level === 'yellow' ? 'active' : ''}" style="--dot-color: #FF9800;"></span>
+            <span class="tl-dot ${level === 'green' ? 'active' : ''}" style="--dot-color: #00C853;"></span>
+        </div>
+        <div class="summary-content">
+            <span class="summary-label" style="color: ${cfg.color};">${cfg.label}</span>
+            <span class="summary-text">${text}</span>
+        </div>
     `;
 }
 
