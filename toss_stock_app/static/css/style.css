@@ -1849,10 +1849,11 @@ body {
 }
 
 .summary-text {
-    font-size: 15px;
+    font-size: 13.5px;
     font-weight: 600;
     color: var(--toss-gray-800);
-    line-height: 1.6;
+    line-height: 1.7;
+    word-break: keep-all;
 }
 
 /* 순유동성 카드 */
