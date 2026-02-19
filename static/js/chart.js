@@ -264,8 +264,8 @@ async function loadData() {
 
         // 새 시리즈 추가
         data.stocks.forEach((stock, i) => {
-            // API 응답에서 이름 저장
-            if (stock.name) {
+            // API 응답에서 이름 저장 (이미 한글 이름이 있으면 덮어쓰지 않음)
+            if (stock.name && !tickerNameMap[stock.ticker]) {
                 tickerNameMap[stock.ticker] = stock.name;
             }
 
