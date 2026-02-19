@@ -1788,6 +1788,83 @@ body {
     }
 }
 
+/* 한줄 요약 박스 */
+.macro-summary-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #F0F6FF, #E8F5E9);
+    border: 1px solid #D0E3FF;
+    border-radius: 16px;
+    margin-bottom: 20px;
+}
+
+.summary-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.summary-text {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--toss-gray-800);
+    line-height: 1.6;
+}
+
+/* 순유동성 카드 */
+.net-liquidity-card {
+    background: linear-gradient(135deg, #1a1f36 0%, #2d1b4e 100%) !important;
+    border: none !important;
+    color: #fff;
+}
+
+.net-liquidity-card .mc-name {
+    color: #fff;
+    font-size: 18px;
+}
+
+.net-liquidity-card .mc-symbol {
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.net-liquidity-card .mc-value {
+    color: #fff;
+    font-size: 28px;
+}
+
+.net-liquidity-card .mc-desc {
+    color: rgba(255, 255, 255, 0.7);
+    border-top-color: rgba(255, 255, 255, 0.15);
+}
+
+.net-liquidity-card .mc-chart-dates span {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.net-liquidity-card:hover {
+    background: linear-gradient(135deg, #232847 0%, #3a2363 100%) !important;
+    border-color: transparent !important;
+    transform: translateY(-4px);
+    box-shadow: 0 16px 32px rgba(45, 27, 78, 0.3);
+}
+
+.nl-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    color: #FFD700;
+    background: rgba(255, 215, 0, 0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+    letter-spacing: 0.5px;
+}
+
 /* ========================
    AI 채팅 섹션 스타일
    ======================== */
